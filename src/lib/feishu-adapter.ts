@@ -15,6 +15,7 @@ const FIELD_ALIASES = {
   quantity: ['销售数量（扎）', '销售数量', '扎数', '数量'],
   note: ['备注'],
   recipeText: ['配方明细'],
+  recipeLink: ['配方', '成品配方'],
   material: ['花材名称', '花材'],
   stems: ['花材用量（枝数）', '支数'],
   unit: ['规格', '单位'],
@@ -73,23 +74,70 @@ function recipeFromRecord(fields: Record<string, unknown>, labels: Record<string
 }
 
 function linkedRecordIds(value: unknown): { tableId: string; recordIds: string[] } | null {
-  if (!value || typeof value !== 'object' || Array.isArray(value)) return null;
+  if (!value || typeof value !== 'object') return null;
+  if (Array.isArray(value)) {
+    for (const item of value) {
+      const nested = linkedRecordIds(item);
+      if (nested) return nested;
+    }
+    return null;
+  }
   const link = value as Record<string, unknown>;
-  const tableId = text(link.tableId);
-  const recordIds = Array.isArray(link.recordIds) ? link.recordIds.map(text).filter(Boolean) : [];
+  const tableId = text(link.tableId ?? link.table_id);
+  const rawRecordIds = link.recordIds ?? link.record_ids;
+  const recordIds = Array.isArray(rawRecordIds) ? rawRecordIds.map(text).filter(Boolean) : [];
   return tableId && recordIds.length ? { tableId, recordIds } : null;
 }
 
+async function recipeFromProductTable(productName: string, quantity: number): Promise<RecipeLine[]> {
+  if (!productName) return [];
+  try {
+    const productTable = await bitable.base.getTableByName('成品汇总表');
+    const productMeta = await productTable.getFieldMetaList();
+    const productLabels = Object.fromEntries(productMeta.map((meta) => [meta.name, meta.id]));
+    const productNameField = productLabels['花束名称'] ?? productLabels['成品名称'] ?? productLabels['商品名称'];
+    const recipeField = productLabels['配方'] ?? productLabels['成品配方'];
+    if (!productNameField || !recipeField) return [];
+    const response = await productTable.getRecordsByPage({ pageSize: 200, stringValue: false });
+    const productRecords = response.records.filter((record) => text(record.fields[productNameField]).trim() === productName.trim());
+    const grouped = new Map<string, RecipeLine>();
+    for (const productRecord of productRecords) {
+      const recipeLink = linkedRecordIds(productRecord.fields[recipeField]);
+      if (!recipeLink) continue;
+      const recipeTable = await bitable.base.getTableById(recipeLink.tableId);
+      const recipeRecords = await recipeTable.getRecordsByIds(recipeLink.recordIds, true);
+      const recipeMeta = await recipeTable.getFieldMetaList();
+      const recipeLabels = Object.fromEntries(recipeMeta.map((meta) => [meta.name, meta.id]));
+      for (const recipeRecord of recipeRecords) {
+        const material = text(findField(recipeRecord.fields, FIELD_ALIASES.material, recipeLabels)) || '未命名花材';
+        const stemsPerBunch = number(findField(recipeRecord.fields, FIELD_ALIASES.stems, recipeLabels));
+        const unit = text(findField(recipeRecord.fields, FIELD_ALIASES.unit, recipeLabels)) || '支';
+        const note = text(findField(recipeRecord.fields, FIELD_ALIASES.recipeNote, recipeLabels));
+        const current = grouped.get(material);
+        if (current) current.totalStems += stemsPerBunch * quantity;
+        else grouped.set(material, { material, stemsPerBunch, unit, totalStems: stemsPerBunch * quantity, note });
+      }
+    }
+    return [...grouped.values()];
+  } catch {
+    return [];
+  }
+}
+
 async function linkedRecipe(fields: Record<string, unknown>, labels: Record<string, string>, quantity: number): Promise<RecipeLine[]> {
+  const productName = text(findField(fields, FIELD_ALIASES.productName, labels));
   const productLink = linkedRecordIds(findField(fields, FIELD_ALIASES.productName, labels));
-  if (!productLink) return recipeFromRecord(fields, labels, quantity);
+  if (!productLink) {
+    const fallbackRecipe = await recipeFromProductTable(productName, quantity);
+    return fallbackRecipe.length ? fallbackRecipe : recipeFromRecord(fields, labels, quantity);
+  }
   try {
     const productTable = await bitable.base.getTableById(productLink.tableId);
     const productRecords = await productTable.getRecordsByIds(productLink.recordIds, true);
     const productMeta = await productTable.getFieldMetaList();
     const productLabels = Object.fromEntries(productMeta.map((meta) => [meta.name, meta.id]));
     const recipeLinks = productRecords.flatMap((record) => {
-      const recipeField = productLabels['配方'];
+      const recipeField = productLabels['配方'] ?? productLabels['成品配方'];
       return recipeField ? [linkedRecordIds(record.fields[recipeField])].filter(Boolean) as Array<{ tableId: string; recordIds: string[] }> : [];
     });
     const grouped = new Map<string, RecipeLine>();
