@@ -13,6 +13,8 @@ export type PrintOrder = {
   orderNo: string;
   shipDate: string;
   customer: string;
+  category: string;
+  careInstructions: string;
   productName: string;
   productCode: string;
   quantity: number;
@@ -36,6 +38,37 @@ export type LabelConfig = {
   showQuantity: boolean;
   showDate: boolean;
   showCustomer: boolean;
+  showCareInstructions: boolean;
+};
+
+export type DateFilterMode = 'all' | 'exact' | 'range' | 'offset';
+
+export type PrintFilter = {
+  customers: string[];
+  categories: string[];
+  products: string[];
+  dateMode: DateFilterMode;
+  exactDate: string;
+  startDate: string;
+  endDate: string;
+  baseDate: string;
+  offsetDays: number;
+  quantityMode: 'order' | 'custom';
+  customQuantity: number;
+};
+
+export const defaultPrintFilter: PrintFilter = {
+  customers: [],
+  categories: [],
+  products: [],
+  dateMode: 'all',
+  exactDate: '',
+  startDate: '',
+  endDate: '',
+  baseDate: '',
+  offsetDays: 2,
+  quantityMode: 'order',
+  customQuantity: 1,
 };
 
 export const defaultLabelConfig: LabelConfig = {
@@ -53,6 +86,7 @@ export const defaultLabelConfig: LabelConfig = {
   showQuantity: true,
   showDate: true,
   showCustomer: true,
+  showCareInstructions: false,
 };
 
 export const sampleOrders: PrintOrder[] = [
@@ -61,6 +95,8 @@ export const sampleOrders: PrintOrder[] = [
     orderNo: 'HZ-20260823-001',
     shipDate: '2026/08/24',
     customer: '天虹',
+    category: '鲜花花束',
+    careInstructions: '避免阳光直射，保持花泥湿润',
     productName: '云间甜梦玫瑰混搭花束',
     productCode: '2020016014883',
     quantity: 12,
@@ -76,6 +112,8 @@ export const sampleOrders: PrintOrder[] = [
     orderNo: 'HZ-20260823-002',
     shipDate: '2026/08/24',
     customer: '天虹',
+    category: '鲜花花束',
+    careInstructions: '远离空调风口，保持环境通风',
     productName: '彩虹系列单头康乃馨随机色',
     productCode: '2020016014107',
     quantity: 8,
@@ -114,7 +152,11 @@ export function aggregateOrders(orders: PrintOrder[]): PrintOrder[] {
   return [...byProduct.values()];
 }
 
-export function expandLabelCopies(orders: PrintOrder[], config: LabelConfig): PrintOrder[] {
+export function expandLabelCopies(orders: PrintOrder[], config: LabelConfig, customCopies?: number): PrintOrder[] {
+  if (customCopies !== undefined) {
+    const copies = Math.max(0, Math.round(customCopies));
+    return orders.flatMap((order) => Array.from({ length: copies }, (_, index) => ({ ...order, recordId: `${order.recordId}-custom-${index + 1}` })));
+  }
   if (!config.copiesByQuantity) return orders;
   return orders.flatMap((order) =>
     Array.from({ length: Math.max(1, Math.round(order.quantity)) }, (_, index) => ({
@@ -122,4 +164,43 @@ export function expandLabelCopies(orders: PrintOrder[], config: LabelConfig): Pr
       recordId: `${order.recordId}-copy-${index + 1}`,
     })),
   );
+}
+
+function dateKey(value: string): string {
+  const match = value.match(/(\d{4})[/-](\d{1,2})[/-](\d{1,2})/);
+  return match ? `${match[1]}-${match[2].padStart(2, '0')}-${match[3].padStart(2, '0')}` : '';
+}
+
+function shiftDate(value: string, days: number): string {
+  const date = new Date(`${value}T00:00:00`);
+  if (Number.isNaN(date.getTime())) return '';
+  date.setDate(date.getDate() + days);
+  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
+}
+
+export function filterOrders(orders: PrintOrder[], filter: PrintFilter): PrintOrder[] {
+  const customers = new Set(filter.customers);
+  const categories = new Set(filter.categories);
+  const products = new Set(filter.products);
+  let targetDate = '';
+  if (filter.dateMode === 'exact') targetDate = dateKey(filter.exactDate);
+  if (filter.dateMode === 'offset') targetDate = shiftDate(filter.baseDate, Math.max(0, Math.round(filter.offsetDays)));
+  const start = dateKey(filter.startDate);
+  const end = dateKey(filter.endDate);
+
+  return orders.filter((order) => {
+    if (customers.size && !customers.has(order.customer)) return false;
+    if (categories.size && !categories.has(order.category)) return false;
+    if (products.size && !products.has(order.productName)) return false;
+    const orderDate = dateKey(order.shipDate);
+    if (filter.dateMode === 'exact' || filter.dateMode === 'offset') return Boolean(targetDate && orderDate === targetDate);
+    if (filter.dateMode === 'range') return Boolean(start && end && orderDate >= start && orderDate <= end);
+    return true;
+  });
+}
+
+export function applyQuantityFilter(orders: PrintOrder[], filter: PrintFilter): PrintOrder[] {
+  if (filter.quantityMode === 'order') return orders;
+  const quantity = Math.max(0, Math.round(filter.customQuantity || 0));
+  return orders.map((order) => ({ ...order, quantity }));
 }

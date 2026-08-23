@@ -2,7 +2,7 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task.
 
-**Goal:** 为标签和加工单增加客户、花束、日期、数量筛选，并支持自定义 T+n。
+**Goal:** 为标签和加工单增加客户、品类、花束、日期、数量筛选，并支持自定义 T+n 与养护说明打印。
 
 **Architecture:** 在 `print-model` 中定义纯函数筛选和数量覆盖逻辑；`App` 维护筛选控件状态并把结果传给现有预览组件；飞书适配器只负责读取记录。
 
@@ -26,9 +26,9 @@
 - Modify: `src/App.tsx`
 - Modify: `src/styles.css`
 
-- [ ] 增加客户/花束多选、日期模式、T、n、数量模式控件。
+- [ ] 增加客户/品类/花束多选、日期模式、T、n、数量模式控件。
 - [ ] 用筛选结果驱动标签和加工单，并在空结果时禁用打印。
-- [ ] 保留现有标签规格和加工单结构。
+- [ ] 增加养护说明标签开关，保留现有标签规格和加工单结构。
 
 ### Task 3: 文档与验证
 

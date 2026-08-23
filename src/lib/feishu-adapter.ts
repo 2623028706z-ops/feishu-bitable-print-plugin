@@ -9,6 +9,8 @@ const FIELD_ALIASES = {
   shipDate: ['出货日期'],
   productCode: ['花束编码'],
   customer: ['客户名称', '客户'],
+  category: ['品类', '类别', '花束品类'],
+  careInstructions: ['养护说明'],
   productName: ['花束名称', '商品名称', '成品名称'],
   quantity: ['销售数量（扎）', '销售数量', '扎数', '数量'],
   note: ['备注'],
@@ -47,7 +49,8 @@ function findField(fields: Record<string, unknown>, names: readonly string[], la
 function normalizeDate(value: unknown): string {
   const raw = text(value);
   if (!raw) return '';
-  const date = new Date(raw);
+  const numeric = typeof value === 'number' ? value : Number(raw);
+  const date = Number.isFinite(numeric) && numeric > 100000000000 ? new Date(numeric) : new Date(raw);
   return Number.isNaN(date.getTime()) ? raw : date.toLocaleDateString('zh-CN');
 }
 
@@ -125,6 +128,8 @@ async function normalizeRecord(record: RawRecord, labels: Record<string, string>
     orderNo: text(findField(fields, FIELD_ALIASES.orderNo, labels)),
     shipDate: normalizeDate(findField(fields, FIELD_ALIASES.shipDate, labels)),
     customer: text(findField(fields, FIELD_ALIASES.customer, labels)),
+    category: text(findField(fields, FIELD_ALIASES.category, labels)),
+    careInstructions: text(findField(fields, FIELD_ALIASES.careInstructions, labels)),
     productName: text(findField(fields, FIELD_ALIASES.productName, labels)) || '未命名花束',
     productCode,
     quantity,
