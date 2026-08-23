@@ -70,4 +70,10 @@ describe('versioned print templates', () => {
     expect(migrated.grid).toMatchObject({ columns: 20, rows: 1, gapXmm: 50, gapYmm: 0, marginXmm: 50, marginYmm: 0 });
     expect(migrated.styles).toMatchObject({ fontSize: 20, fontWeight: 900, lineHeight: 2.5, padding: 20, contentGap: 0 });
   });
+
+  it('normalizes legacy element align into the printable textAlign field', () => {
+    const migrated = migrateTemplateConfig({ elements: [{ id: 'customer', kind: 'customer', x: 0, y: 0, width: 10, height: 4, visible: true, align: 'right' }] }, 'label');
+    expect(migrated.elements[0].align).toBe('right');
+    expect(migrated.elements[0].textAlign).toBe('right');
+  });
 });
