@@ -39,6 +39,7 @@ export type LabelConfig = {
   fontWeight: number;
   textAlign: 'left' | 'center' | 'right';
   lineHeight: number;
+  labelDateOffsetDays: number;
   copiesByQuantity: boolean;
   showName: boolean;
   showCode: boolean;
@@ -93,6 +94,7 @@ export const defaultLabelConfig: LabelConfig = {
   fontWeight: 600,
   textAlign: 'center',
   lineHeight: 1.2,
+  labelDateOffsetDays: 0,
   copiesByQuantity: false,
   showName: true,
   showCode: true,
@@ -184,10 +186,18 @@ function dateKey(value: string): string {
 }
 
 function shiftDate(value: string, days: number): string {
-  const date = new Date(`${value}T00:00:00`);
+  const match = value.match(/^(\d{4})[\/-](\d{1,2})[\/-](\d{1,2})/);
+  const date = match
+    ? new Date(Number(match[1]), Number(match[2]) - 1, Number(match[3]))
+    : new Date(`${value}T00:00:00`);
   if (Number.isNaN(date.getTime())) return '';
   date.setDate(date.getDate() + days);
-  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
+  const separator = match ? value.includes('/') ? '/' : '-' : '-';
+  return `${date.getFullYear()}${separator}${String(date.getMonth() + 1).padStart(2, '0')}${separator}${String(date.getDate()).padStart(2, '0')}`;
+}
+
+export function adjustPrintDate(value: string, days: number): string {
+  return shiftDate(value, Math.round(days)) || value;
 }
 
 export function filterOrders(orders: PrintOrder[], filter: PrintFilter): PrintOrder[] {

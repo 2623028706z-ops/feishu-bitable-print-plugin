@@ -1,7 +1,11 @@
 import { describe, expect, it } from 'vitest';
-import { aggregateOrders, applyQuantityFilter, defaultLabelConfig, defaultPrintFilter, expandLabelCopies, filterOrders, sampleOrders } from './print-model';
+import { adjustPrintDate, aggregateOrders, applyQuantityFilter, defaultLabelConfig, defaultPrintFilter, expandLabelCopies, filterOrders, sampleOrders } from './print-model';
 
 describe('print model', () => {
+  it('adjusts only the label date with T plus n', () => {
+    expect(adjustPrintDate('2026/08/23', 2)).toBe('2026/08/25');
+    expect(adjustPrintDate('2026/08/23', -1)).toBe('2026/08/22');
+  });
   it('expands label copies from sales quantity only when enabled', () => {
     expect(expandLabelCopies(sampleOrders, defaultLabelConfig)).toHaveLength(2);
     expect(expandLabelCopies(sampleOrders, { ...defaultLabelConfig, copiesByQuantity: true })).toHaveLength(20);
