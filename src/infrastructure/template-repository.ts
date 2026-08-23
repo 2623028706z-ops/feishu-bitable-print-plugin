@@ -43,7 +43,12 @@ export class TemplateRepository {
   private table: any;
   private fields: Record<string, string> = {};
 
-  constructor(base: BaseLike = bitable.base as unknown as BaseLike, tableName = TEMPLATE_TABLE_NAME) { this.base = base; this.tableName = tableName; }
+  constructor(base?: BaseLike, tableName = TEMPLATE_TABLE_NAME) {
+    this.base = base ?? (bitable?.base as unknown as BaseLike | undefined) ?? {
+      getTableByName: async () => { throw new Error('飞书 SDK 尚未就绪'); },
+    };
+    this.tableName = tableName;
+  }
 
   private async getTable(): Promise<any | null> {
     if (this.table) return this.table;

@@ -19,6 +19,7 @@
 body { margin: 0; min-width: 320px; min-height: 100vh; }
 button, input { font: inherit; }
 button { cursor: pointer; }
+.startup-error { min-height: 100dvh; display: grid; place-content: center; gap: 10px; padding: 24px; color: #25352d; text-align: center; background: #f7f9f8; }.startup-error strong { font-size: 18px; }.startup-error p { max-width: 48ch; margin: 0; color: #718078; font-size: 13px; }.startup-error button { justify-self: center; min-height: 36px; padding: 0 16px; border: 0; border-radius: 5px; color: white; background: #28785b; }
 
 .app-shell { min-height: 100vh; display: grid; grid-template-columns: 320px minmax(0, 1fr); }
 .control-panel { position: sticky; top: 0; height: 100vh; overflow-y: auto; background: #fbfcfb; border-right: 1px solid var(--line); padding: 16px; display: flex; flex-direction: column; gap: 12px; }
