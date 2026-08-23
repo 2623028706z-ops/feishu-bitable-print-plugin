@@ -248,4 +248,49 @@ describe('feishu link value parsing', () => {
     ]);
     expect(result.orders[0].issues).not.toContain('missing-recipe');
   });
+
+  it('finds a conventional product recipe table by code when the table is not named 成品汇总表', async () => {
+    const salesTable = {
+      id: 'tbl_sales_fallback',
+      getName: vi.fn().mockResolvedValue('花众销售订单汇总表'),
+      getFieldMetaList: vi.fn().mockResolvedValue([
+        { id: 'fld_product', name: '花束名称' },
+        { id: 'fld_code', name: '花束编码' },
+        { id: 'fld_quantity', name: '销售数量' },
+      ]),
+      getViewById: vi.fn().mockResolvedValue({
+        getSelectedRecordIdList: vi.fn().mockResolvedValue([]),
+        getName: vi.fn().mockResolvedValue('今日出货'),
+      }),
+      getRecordsByPage: vi.fn().mockResolvedValue({
+        records: [{ recordId: 'rec_sales_fallback', fields: { fld_product: '名称可能不同', fld_code: 'CODE-001', fld_quantity: 2 } }],
+      }),
+    };
+    const productTable = {
+      getFieldMetaList: vi.fn().mockResolvedValue([
+        { id: 'p_name', name: '花束名称' },
+        { id: 'p_code', name: '成品编码' },
+        { id: 'p_recipe', name: '成品配方', property: { tableId: 'tbl_recipe_fallback' } },
+      ]),
+      getRecordsByPage: vi.fn().mockResolvedValue({
+        records: [{ fields: { p_name: '成品名称', p_code: 'CODE-001', p_recipe: { recordIds: ['rec_recipe_fallback'] } } }],
+      }),
+    };
+    const recipeTable = {
+      getFieldMetaList: vi.fn().mockResolvedValue([{ id: 'r_material', name: '花材名称' }, { id: 'r_stems', name: '花材用量（枝数）' }]),
+      getRecordsByIds: vi.fn().mockResolvedValue([{ fields: { r_material: '编码匹配花材', r_stems: 4 } }]),
+    };
+    vi.mocked(base.getActiveTable).mockResolvedValue(salesTable as never);
+    vi.mocked(base.getSelection).mockResolvedValue({ tableId: 'tbl_other', viewId: 'view_fallback', recordId: null, fieldId: null, baseId: 'base' });
+    vi.mocked(base.getTableByName).mockImplementation(async (name) => {
+      if (name === '成品配方表') return productTable as never;
+      throw new Error('table not found');
+    });
+    vi.mocked(base.getTableById).mockResolvedValue(recipeTable as never);
+
+    const result = await loadFeishuOrders();
+
+    expect(result.orders[0].recipe[0]).toMatchObject({ material: '编码匹配花材', stemsPerBunch: 4, totalStems: 8 });
+    expect(result.orders[0].issues).not.toContain('missing-recipe');
+  });
 });

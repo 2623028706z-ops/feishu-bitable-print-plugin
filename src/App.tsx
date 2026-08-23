@@ -123,6 +123,10 @@ function isEmbeddedFeishuHost(): boolean {
   try { return window.top !== window.self; } catch { return true; }
 }
 
+function previewModeRequested(): boolean {
+  try { return new URLSearchParams(window.location.search).get('preview') === '1'; } catch { return false; }
+}
+
 function previewOrdersForToday(): PrintOrder[] {
   const today = todayInput().replace(/-/g, '/');
   return sampleOrders.map((order, index) => ({ ...order, recordId: `preview-${index + 1}`, shipDate: today }));
@@ -191,7 +195,7 @@ export default function App() {
       setTableName(result.tableName);
     } catch (cause) {
       if (sequence !== refreshSequence.current) return;
-      if (!isEmbeddedFeishuHost()) {
+      if (!isEmbeddedFeishuHost() || previewModeRequested()) {
         setOrders(previewOrdersForToday());
         setSource('脱离飞书预览数据');
         setTableName('销售订单示例');
