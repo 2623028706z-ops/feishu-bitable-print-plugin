@@ -148,6 +148,12 @@ function recordId(value: unknown): string {
   return text(item.recordId ?? item.record_id ?? item.id);
 }
 
+function fallbackRecordId(): string {
+  const cryptoApi = globalThis.crypto as Crypto & { randomUUID?: () => string } | undefined;
+  if (cryptoApi?.randomUUID) return cryptoApi.randomUUID();
+  return `local-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
+}
+
 /**
  * SDK normally returns one IOpenLink object. Older hosts and lookup/formula
  * wrappers can return nested values, so keep parsing independent of the
@@ -310,7 +316,7 @@ async function normalizeRecord(
   if (quantity <= 0) issues.push('missing-quantity');
   if (!recipe.length) issues.push('missing-recipe');
   return {
-    recordId: record.recordId ?? crypto.randomUUID(),
+    recordId: record.recordId ?? fallbackRecordId(),
     orderNo: text(findField(fields, FIELD_ALIASES.orderNo, labels)),
     shipDate: normalizeDate(findField(fields, FIELD_ALIASES.shipDate, labels)),
     customer: text(findField(fields, FIELD_ALIASES.customer, labels)),

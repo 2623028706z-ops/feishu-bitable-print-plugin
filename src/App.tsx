@@ -13,6 +13,7 @@ import { clampFixedCopies, limitPreviewItems, MAX_TOTAL_PRINT_ITEMS, validatePri
 import { WorkOrderEditor } from './features/work-order/WorkOrderEditor';
 import { WorkOrderPrintDocument, createDefaultWorkOrderTemplate, type WorkOrderTemplate } from './features/print/WorkOrderPrintDocument';
 import { createTemplateRepository, TemplatePermissionError } from './infrastructure/template-repository';
+import { retry } from './lib/retry';
 
 type Mode = 'label' | 'work-order';
 const MODE_STORAGE_KEY = 'huazhong-print-mode';
@@ -133,6 +134,7 @@ export default function App() {
   const [templateMessage, setTemplateMessage] = useState('');
   const [templateMissing, setTemplateMissing] = useState(false);
   const [isPrinting, setIsPrinting] = useState(false);
+  const refreshSequence = useRef(0);
   const printRef = useRef<HTMLDivElement>(null);
   const repository = useMemo(() => createTemplateRepository(), []);
   const print = useReactToPrint({ contentRef: printRef, documentTitle: mode === 'label' ? '花众标签' : '花众加工单', onBeforePrint: async () => { setIsPrinting(true); await new Promise<void>((resolve) => window.setTimeout(resolve, 0)); }, onAfterPrint: () => setIsPrinting(false) });
@@ -161,17 +163,19 @@ export default function App() {
   useEffect(() => { storageSet(FILTER_STORAGE_KEY, JSON.stringify(filter)); }, [filter]);
 
   const refresh = useCallback(async () => {
+    const sequence = ++refreshSequence.current;
     setLoading(true); setError('');
     try {
-      const result = await loadFeishuOrders();
+      const result = await retry(loadFeishuOrders, { attempts: 3, delaysMs: [350, 900] });
+      if (sequence !== refreshSequence.current) return;
       setOrders(result.orders);
       setSource(result.orders.length ? result.source : '当前视图为空');
       setTableName(result.tableName);
     } catch (cause) {
-      setOrders([]);
+      if (sequence !== refreshSequence.current) return;
       setError(cause instanceof Error ? cause.message : '无法读取飞书当前表');
       setSource('未连接飞书');
-    } finally { setLoading(false); }
+    } finally { if (sequence === refreshSequence.current) setLoading(false); }
   }, []);
 
   useEffect(() => {
