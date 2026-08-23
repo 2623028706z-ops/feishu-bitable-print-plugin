@@ -21,9 +21,17 @@ const CONFIG_STORAGE_KEY = 'huazhong-label-config';
 const LABEL_TEMPLATE_STORAGE_KEY = 'huazhong-label-template';
 const WORK_TEMPLATE_STORAGE_KEY = 'huazhong-work-template';
 
+function storageGet(key: string): string | null {
+  try { return window.localStorage.getItem(key); } catch { return null; }
+}
+
+function storageSet(key: string, value: string): void {
+  try { window.localStorage.setItem(key, value); } catch { /* Feishu iframe storage can be unavailable. */ }
+}
+
 function readMemory<T>(key: string, fallback: T): T {
   try {
-    const value = localStorage.getItem(key);
+    const value = storageGet(key);
     return value ? { ...fallback as object, ...JSON.parse(value) } as T : fallback;
   } catch {
     return fallback;
@@ -107,7 +115,7 @@ function labelSheetMetrics(config: LabelConfig) {
 }
 
 export default function App() {
-  const [mode, setMode] = useState<Mode>(() => localStorage.getItem(MODE_STORAGE_KEY) === 'work-order' ? 'work-order' : 'label');
+  const [mode, setMode] = useState<Mode>(() => storageGet(MODE_STORAGE_KEY) === 'work-order' ? 'work-order' : 'label');
   const [orders, setOrders] = useState<PrintOrder[]>([]);
   const [source, setSource] = useState('等待读取飞书');
   const [tableName, setTableName] = useState('销售订单表');
@@ -131,13 +139,13 @@ export default function App() {
 
   const updateConfig = useCallback((patch: Partial<LabelConfig>) => setConfig((current) => {
     const next = { ...current, ...patch };
-    localStorage.setItem(CONFIG_STORAGE_KEY, JSON.stringify(next));
+    storageSet(CONFIG_STORAGE_KEY, JSON.stringify(next));
     return next;
   }), []);
 
   useEffect(() => { setLabelTemplate((current) => templateFromConfig(config, current)); }, [config]);
-  useEffect(() => { localStorage.setItem(LABEL_TEMPLATE_STORAGE_KEY, JSON.stringify(labelTemplate)); }, [labelTemplate]);
-  useEffect(() => { localStorage.setItem(WORK_TEMPLATE_STORAGE_KEY, JSON.stringify(workTemplate)); }, [workTemplate]);
+  useEffect(() => { storageSet(LABEL_TEMPLATE_STORAGE_KEY, JSON.stringify(labelTemplate)); }, [labelTemplate]);
+  useEffect(() => { storageSet(WORK_TEMPLATE_STORAGE_KEY, JSON.stringify(workTemplate)); }, [workTemplate]);
   useEffect(() => {
     repository.load().then((snapshot) => {
       const shared = snapshot.templates.find((template) => template.type === 'label' && template.isDefault);
@@ -149,8 +157,8 @@ export default function App() {
     }).catch(() => setTemplateMessage('共享模板读取失败，当前使用本地模板'));
   }, [repository]);
 
-  useEffect(() => { localStorage.setItem(MODE_STORAGE_KEY, mode); }, [mode]);
-  useEffect(() => { localStorage.setItem(FILTER_STORAGE_KEY, JSON.stringify(filter)); }, [filter]);
+  useEffect(() => { storageSet(MODE_STORAGE_KEY, mode); }, [mode]);
+  useEffect(() => { storageSet(FILTER_STORAGE_KEY, JSON.stringify(filter)); }, [filter]);
 
   const refresh = useCallback(async () => {
     setLoading(true); setError('');
@@ -168,7 +176,8 @@ export default function App() {
 
   useEffect(() => {
     refresh();
-    const onSelectionChange = (bitable.base as unknown as { onSelectionChange?: (callback: () => void) => (() => void) | void }).onSelectionChange;
+    const base = bitable?.base as unknown as { onSelectionChange?: (callback: () => void) => (() => void) | void } | undefined;
+    const onSelectionChange = base?.onSelectionChange;
     if (typeof onSelectionChange !== 'function') return;
     const unsubscribe = onSelectionChange(() => { refresh(); });
     return typeof unsubscribe === 'function' ? unsubscribe : undefined;
