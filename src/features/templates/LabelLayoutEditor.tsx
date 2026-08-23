@@ -1,0 +1,42 @@
+import { useEffect, useRef, useState } from 'react';
+import { Group, Layer, Rect, Stage, Text, Transformer } from 'react-konva';
+import type Konva from 'konva';
+import { Eye, EyeOff, Move, ScanBarcode } from 'lucide-react';
+import { adjustPrintDate, type PrintOrder } from '../../lib/print-model';
+import { clampLabelElementToBounds, type LabelElement, type LabelElementKind, type LabelTemplate } from '../../domain/templates';
+
+const labels: Record<LabelElementKind, string> = { name: '花束名称', barcode: '条码', code: '花束编码', date: '标签日期', customer: '客户名称', careInstructions: '养护说明', care: '养护说明' };
+
+const fallbackOrder: PrintOrder = { recordId: 'layout-preview', orderNo: '', shipDate: '2026/08/23', customer: '客户名称', category: '', careInstructions: '养护说明', productName: '花束名称', productCode: '2020016014883', quantity: 1, note: '', recipe: [], issues: [] };
+
+function valueFor(element: LabelElement, order: PrintOrder, offset: number) {
+  if (element.kind === 'name') return order.productName || '花束名称';
+  if (element.kind === 'code') return order.productCode || '未设置花束编码';
+  if (element.kind === 'date') return order.shipDate ? adjustPrintDate(order.shipDate, offset) : '未填写日期';
+  if (element.kind === 'customer') return order.customer || '未填写客户';
+  if (element.kind === 'careInstructions' || element.kind === 'care') return order.careInstructions || '养护说明';
+  return '';
+}
+
+function BarcodeMock({ width, height, code }: { width: number; height: number; code: string }) {
+  const source = code || '2020016014883';
+  const bars = Array.from(source).flatMap((character, index) => [1 + ((character.charCodeAt(0) + index) % 3), 1, 1 + ((character.charCodeAt(0) + index * 7) % 2)]);
+  const total = bars.reduce((sum, bar) => sum + bar, 0) + bars.length - 1;
+  let cursor = 0;
+  return <Group><Rect width={width} height={height} fill="#fff" />{bars.map((bar, index) => { const barWidth = width * bar / total; const x = cursor; cursor += barWidth + width / total; return <Rect key={index} x={x} y={height * .1} width={Math.max(1, barWidth)} height={height * .8} fill="#18231d" />; })}</Group>;
+}
+
+export function LabelLayoutEditor({ template, order, onChange }: { template: LabelTemplate; order?: PrintOrder; onChange: (template: LabelTemplate) => void }) {
+  const preview = order ?? fallbackOrder;
+  const stageWidth = Math.min(620, Math.max(320, template.paper.widthMm * 7));
+  const scale = stageWidth / template.paper.widthMm;
+  const stageHeight = Math.max(220, template.paper.heightMm * scale);
+  const transformer = useRef<Konva.Transformer>(null);
+  const [selectedId, setSelectedId] = useState<string | null>(template.elements.find((element) => element.visible)?.id ?? null);
+  const selected = template.elements.find((element) => element.id === selectedId);
+  useEffect(() => { if (selectedId && !template.elements.some((element) => element.id === selectedId)) setSelectedId(null); }, [selectedId, template.elements]);
+  const update = (id: string, patch: Partial<LabelElement>) => onChange({ ...template, elements: template.elements.map((element) => element.id === id ? clampLabelElementToBounds({ ...element, ...patch }, template) : element) });
+  const choose = (id: string, node?: Konva.Node) => { setSelectedId(id); if (node) { transformer.current?.nodes([node]); transformer.current?.getLayer()?.batchDraw(); } };
+
+  return <section className="layout-editor" aria-label="标签拖拽排版"><header className="layout-editor-head"><div><strong>拖拽排版</strong><span>选择字段后可移动或缩放，位置自动保存</span></div><small>{template.paper.widthMm} x {template.paper.heightMm} mm</small></header><div className="layout-editor-shell"><div className="layout-editor-stage"><Stage width={stageWidth} height={stageHeight} onMouseDown={(event) => { if (event.target === event.target.getStage()) { setSelectedId(null); transformer.current?.nodes([]); } }}><Layer><Rect width={stageWidth} height={stageHeight} fill="#fff" stroke="#52665b" />{template.elements.filter((element) => element.visible).map((element) => { const width = element.width * scale; const height = element.height * scale; const selectedNow = selectedId === element.id; return <Group key={element.id} x={element.x * scale} y={element.y * scale} width={width} height={height} draggable onClick={(event) => choose(element.id, event.currentTarget)} onTap={(event) => choose(element.id, event.currentTarget)} onDragEnd={(event) => update(element.id, { x: event.target.x() / scale, y: event.target.y() / scale })} onTransformEnd={(event) => { const node = event.target; update(element.id, { x: node.x() / scale, y: node.y() / scale, width: node.width() * node.scaleX() / scale, height: node.height() * node.scaleY() / scale }); node.scaleX(1); node.scaleY(1); }}><Rect width={width} height={height} fill={selectedNow ? '#e7f3ec' : '#fff'} opacity={selectedNow ? .8 : .01} stroke={selectedNow ? '#247b59' : '#c4d0ca'} strokeWidth={selectedNow ? 1.5 : .7} dash={selectedNow ? [4, 3] : undefined} />{element.kind === 'barcode' ? <BarcodeMock width={width} height={height} code={preview.productCode} /> : <Text text={valueFor(element, preview, template.labelDateOffsetDays)} width={width} height={height} padding={2} fontFamily={element.fontFamily ?? template.fontFamily} fontSize={(element.fontSizeMm ?? template.fontSize) * scale} fontStyle={(element.fontWeight ?? template.fontWeight) >= 600 ? 'bold' : 'normal'} align={element.textAlign ?? template.textAlign} verticalAlign="middle" wrap={element.kind === 'careInstructions' ? 'word' : 'none'} ellipsis={element.kind !== 'careInstructions'} fill="#17241d" />}</Group>; })}<Transformer ref={transformer} rotateEnabled={false} keepRatio={false} enabledAnchors={['top-left', 'top-right', 'bottom-left', 'bottom-right', 'middle-left', 'middle-right', 'top-center', 'bottom-center']} boundBoxFunc={(oldBox, next) => next.width < 12 || next.height < 10 ? oldBox : next} /></Layer></Stage></div><aside className="layout-editor-inspector"><div className="layout-field-list">{template.elements.map((element) => <button type="button" key={element.id} className={element.id === selectedId ? 'active' : ''} onClick={() => choose(element.id)}><span>{element.kind === 'barcode' ? <ScanBarcode size={14} /> : <Move size={14} />}{labels[element.kind]}</span><span className="visibility" title={element.visible ? '隐藏字段' : '显示字段'} onClick={(event) => { event.stopPropagation(); update(element.id, { visible: !element.visible }); }}>{element.visible ? <Eye size={14} /> : <EyeOff size={14} />}</span></button>)}</div>{selected && <div className="layout-field-controls"><strong>{labels[selected.kind]}</strong><div className="layout-number-grid">{([['X', 'x'], ['Y', 'y'], ['宽', 'width'], ['高', 'height']] as const).map(([label, key]) => <label key={key}><span>{label} mm</span><input aria-label={`${labels[selected.kind]} ${label}`} type="number" min="0" step="0.5" value={selected[key]} onChange={(event) => update(selected.id, { [key]: Number(event.target.value) || 0 })} /></label>)}</div></div>}</aside></div></section>;
+}
