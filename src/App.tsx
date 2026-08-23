@@ -183,7 +183,7 @@ export default function App() {
     const base = bitable?.base as unknown as { onSelectionChange?: (callback: () => void) => (() => void) | void } | undefined;
     const onSelectionChange = base?.onSelectionChange;
     if (typeof onSelectionChange !== 'function') return;
-    const unsubscribe = onSelectionChange(() => { refresh(); });
+    const unsubscribe = onSelectionChange.call(base, () => { refresh(); });
     return typeof unsubscribe === 'function' ? unsubscribe : undefined;
   }, [refresh]);
 
