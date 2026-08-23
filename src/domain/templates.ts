@@ -61,6 +61,7 @@ export type A4Presentation = {
   showPageNumber: boolean;
   titleSizeMm: number;
   metaSizeMm: number;
+  customerSizeMm?: number;
   lineHeight: number;
   cellPaddingMm: number;
   headerBackground: string;

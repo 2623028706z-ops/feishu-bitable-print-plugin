@@ -1,4 +1,5 @@
-import { useId } from 'react';
+import { useId, useState } from 'react';
+import type { PointerEvent as ReactPointerEvent } from 'react';
 import { ArrowDown, ArrowUp, RotateCcw } from 'lucide-react';
 import {
   createDefaultWorkOrderTemplate,
@@ -21,6 +22,7 @@ type NumberPath =
   | 'marginsMm.left'
   | 'typography.titleSizeMm'
   | 'typography.metaSizeMm'
+  | 'typography.customerSizeMm'
   | 'typography.bodySizeMm'
   | 'typography.fontWeight'
   | 'typography.lineHeight'
@@ -61,6 +63,17 @@ const inputStyle = {
   padding: '0 9px',
   width: '100%',
 } as const;
+
+const FONT_OPTIONS = [
+  ['Microsoft YaHei, 微软雅黑, sans-serif', '微软雅黑'],
+  ['PingFang SC, 苹方, sans-serif', '苹方'],
+  ['Noto Sans CJK SC, sans-serif', '思源黑体'],
+  ['SimSun, 宋体, serif', '宋体'],
+  ['Arial, sans-serif', 'Arial'],
+  ['sans-serif', '系统无衬线'],
+] as const;
+
+type LayoutKey = 'header' | 'table' | 'footer';
 
 function NumberInput({
   label,
@@ -153,7 +166,15 @@ function moveColumn(template: WorkOrderTemplate, id: string, direction: -1 | 1):
  */
 export function WorkOrderEditor({ value, onChange, onReset, disabled = false }: WorkOrderEditorProps) {
   const template = normalizeWorkOrderTemplate(value);
+  const [drag, setDrag] = useState<{ key: LayoutKey; startX: number; startY: number; x: number; y: number } | null>(null);
   const patch = (next: Partial<WorkOrderTemplate>) => onChange(normalizeWorkOrderTemplate({ ...template, ...next }));
+  const moveBlock = (event: ReactPointerEvent<HTMLDivElement>) => {
+    if (!drag) return;
+    const scale = 1.25;
+    const dx = (event.clientX - drag.startX) / scale;
+    const dy = (event.clientY - drag.startY) / scale;
+    onChange(normalizeWorkOrderTemplate({ ...template, layout: { ...template.layout, [drag.key]: { x: drag.x + dx, y: drag.y + dy } } }));
+  };
   const reset = () => {
     if (onReset) onReset();
     else onChange(createDefaultWorkOrderTemplate());
@@ -197,11 +218,12 @@ export function WorkOrderEditor({ value, onChange, onReset, disabled = false }: 
 
       <div style={sectionStyle}>
         <div style={{ fontSize: 12, fontWeight: 700 }}>字体与表格</div>
-        <TextInput disabled={disabled} label="字体" onChange={(fontFamily) => patch({ typography: { ...template.typography, fontFamily } })} value={template.typography.fontFamily} />
+        <label htmlFor="work-order-font" style={labelStyle}><span>字体</span><select id="work-order-font" disabled={disabled} onChange={(event) => patch({ typography: { ...template.typography, fontFamily: event.target.value } })} style={inputStyle} value={template.typography.fontFamily}>{FONT_OPTIONS.map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select></label>
         <div style={{ display: 'grid', gap: 8, gridTemplateColumns: '1fr 1fr 1fr' }}>
           <NumberInput disabled={disabled} label="标题 (mm)" max={15} min={3} onChange={(number) => onChange(updateNumber(template, 'typography.titleSizeMm', number))} step={0.1} value={template.typography.titleSizeMm} />
+          <NumberInput disabled={disabled} label="客户名称 (mm)" max={12} min={2} onChange={(number) => onChange(updateNumber(template, 'typography.customerSizeMm', number))} step={0.1} value={template.typography.customerSizeMm} />
           <NumberInput disabled={disabled} label="正文 (mm)" max={10} min={1.5} onChange={(number) => onChange(updateNumber(template, 'typography.bodySizeMm', number))} step={0.1} value={template.typography.bodySizeMm} />
-          <NumberInput disabled={disabled} label="字重" max={900} min={100} onChange={(number) => onChange(updateNumber(template, 'typography.fontWeight', number))} step={100} value={template.typography.fontWeight} />
+          <label style={labelStyle}><span>字重</span><select disabled={disabled} onChange={(event) => onChange(updateNumber(template, 'typography.fontWeight', Number(event.target.value)))} style={inputStyle} value={template.typography.fontWeight}><option value="400">常规</option><option value="500">中等</option><option value="600">半粗</option><option value="700">粗体</option></select></label>
         </div>
         <div style={{ display: 'grid', gap: 8, gridTemplateColumns: '1fr 1fr' }}>
           <NumberInput disabled={disabled} label="单元格内边距 (mm)" max={10} onChange={(number) => onChange(updateNumber(template, 'table.cellPaddingMm', number))} step={0.1} value={template.table.cellPaddingMm} />
@@ -212,6 +234,13 @@ export function WorkOrderEditor({ value, onChange, onReset, disabled = false }: 
           <label style={labelStyle}><span>边框颜色</span><input disabled={disabled} onChange={(event) => patch({ table: { ...template.table, borderColor: event.target.value } })} style={{ ...inputStyle, padding: 3 }} type="color" value={template.table.borderColor} /></label>
           <label style={labelStyle}><span>表头背景</span><input disabled={disabled} onChange={(event) => patch({ table: { ...template.table, headerBackground: event.target.value } })} style={{ ...inputStyle, padding: 3 }} type="color" value={template.table.headerBackground} /></label>
           <label style={labelStyle}><span>正文对齐</span><select disabled={disabled} onChange={(event) => patch({ typography: { ...template.typography, align: event.target.value as WorkOrderTemplate['typography']['align'] } })} style={inputStyle} value={template.typography.align}><option value="left">左对齐</option><option value="center">居中</option><option value="right">右对齐</option></select></label>
+        </div>
+      </div>
+
+      <div style={sectionStyle}>
+        <div style={{ alignItems: 'baseline', display: 'flex', justifyContent: 'space-between' }}><div style={{ fontSize: 12, fontWeight: 700 }}>A4 画布</div><span style={{ color: '#718894', fontSize: 10 }}>拖动版块调整位置</span></div>
+        <div aria-label="加工单拖拽画布" onPointerMove={moveBlock} onPointerUp={() => setDrag(null)} style={{ background: '#edf5f8', border: '1px solid #cfe0e7', borderRadius: 8, height: 220, overflow: 'hidden', position: 'relative', touchAction: 'none' }}>
+          {(['header', 'table', 'footer'] as LayoutKey[]).map((key) => { const labels: Record<LayoutKey, string> = { header: '页眉 · 客户与日期', table: '明细表 · BOM', footer: '页脚' }; const offset = template.layout[key]; const style = key === 'header' ? { left: 18, top: 16 } : key === 'table' ? { left: 18, top: 72 } : { left: 18, top: 188 }; return <div key={key} onPointerDown={(event) => { if (disabled) return; event.currentTarget.setPointerCapture(event.pointerId); setDrag({ key, startX: event.clientX, startY: event.clientY, x: offset.x, y: offset.y }); }} style={{ background: key === 'table' ? '#fff' : '#dff0f6', border: '1px solid #8dbed0', borderRadius: 5, color: '#216986', cursor: disabled ? 'default' : 'grab', fontSize: 10, left: style.left + offset.x * 1.25, minHeight: key === 'table' ? 88 : 34, padding: '8px 9px', position: 'absolute', top: style.top + offset.y * 1.25, width: key === 'table' ? 'calc(100% - 36px)' : 'calc(100% - 36px)' }}>{labels[key]}</div>; })}
         </div>
       </div>
 

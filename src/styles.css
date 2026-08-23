@@ -254,6 +254,8 @@ button:focus-visible, input:focus-visible, select:focus-visible {
 .workspace-content > .layout-editor { margin-top: 0; }
 .workspace-content > .preview-frame { min-width: 0; width: 100%; }
 .app-shell.work-order .workspace-content { display: block; }
+.app-shell.work-order .filter-section > .filter-field:last-child { display: none; }
+.app-shell.work-order .panel-section > .section-title { display: none; }
 .app-shell.work-order [aria-label="加工单模板设置"] { border: 0 !important; border-radius: 0 !important; box-shadow: none !important; padding: 0 !important; background: transparent !important; }
 .app-shell.work-order [aria-label="加工单模板设置"] > div:first-child { padding-bottom: 10px; border-bottom: 1px solid #dbe8ed; }
 .app-shell.work-order [aria-label="加工单模板设置"] [style*="border-top"] { border-top-color: #dbe8ed !important; }

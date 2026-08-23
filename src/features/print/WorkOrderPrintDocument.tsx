@@ -17,11 +17,12 @@ export type WorkOrderTemplate = {
   title: string;
   orientation: 'landscape' | 'portrait';
   marginsMm: { top: number; right: number; bottom: number; left: number };
-  typography: { fontFamily: string; titleSizeMm: number; metaSizeMm: number; bodySizeMm: number; fontWeight: number; lineHeight: number; align: 'left' | 'center' | 'right' };
+  typography: { fontFamily: string; titleSizeMm: number; metaSizeMm: number; customerSizeMm: number; bodySizeMm: number; fontWeight: number; lineHeight: number; align: 'left' | 'center' | 'right' };
   table: { borderWidthMm: number; borderStyle: 'solid' | 'dashed' | 'dotted'; borderColor: string; headerBackground: string; cellPaddingMm: number };
   columns: WorkOrderColumn[];
   header: { visible: boolean; kicker: string; showCustomer: boolean; showShipDate: boolean; showOrderCount: boolean };
   footer: { visible: boolean; text: string; showPageNumber: boolean };
+  layout: { header: { x: number; y: number }; table: { x: number; y: number }; footer: { x: number; y: number } };
 };
 
 export type WorkOrderPrintDocumentProps = {
@@ -90,11 +91,12 @@ export function createDefaultWorkOrderTemplate(): WorkOrderTemplate {
     title: '花束加工单',
     orientation: 'landscape',
     marginsMm: { top: 10, right: 12, bottom: 8, left: 12 },
-    typography: { fontFamily: DEFAULT_FONT, titleSizeMm: 7, metaSizeMm: 2.5, bodySizeMm: 2.8, fontWeight: 500, lineHeight: 1.35, align: 'left' },
+    typography: { fontFamily: DEFAULT_FONT, titleSizeMm: 7, metaSizeMm: 2.5, customerSizeMm: 4, bodySizeMm: 2.8, fontWeight: 500, lineHeight: 1.35, align: 'left' },
     table: { borderWidthMm: 0.25, borderStyle: 'solid', borderColor: '#9bbdca', headerBackground: '#e8f3f7', cellPaddingMm: 2 },
     columns: columnDefaults.map((column) => ({ ...column })),
     header: { visible: true, kicker: '花众生产打印', showCustomer: true, showShipDate: true, showOrderCount: true },
     footer: { visible: true, text: '加工扎数取销售数量（扎），同花束按订单合并。', showPageNumber: true },
+    layout: { header: { x: 0, y: 0 }, table: { x: 0, y: 0 }, footer: { x: 0, y: 0 } },
   };
 }
 
@@ -131,6 +133,7 @@ export function normalizeWorkOrderTemplate(value?: Partial<WorkOrderTemplate> | 
   const table = candidate.table ?? fallback.table;
   const header = candidate.header ?? fallback.header;
   const footer = candidate.footer ?? fallback.footer;
+  const layout = candidate.layout ?? fallback.layout;
   return {
     version: 1,
     name: typeof candidate.name === 'string' && candidate.name.trim() ? candidate.name.trim() : fallback.name,
@@ -141,6 +144,7 @@ export function normalizeWorkOrderTemplate(value?: Partial<WorkOrderTemplate> | 
       fontFamily: fontFamily(typography.fontFamily, DEFAULT_FONT),
       titleSizeMm: clamp(typography.titleSizeMm, fallback.typography.titleSizeMm, 3, 15),
       metaSizeMm: clamp(typography.metaSizeMm, fallback.typography.metaSizeMm, 1.5, 8),
+      customerSizeMm: clamp(typography.customerSizeMm, fallback.typography.customerSizeMm, 2, 12),
       bodySizeMm: clamp(typography.bodySizeMm, fallback.typography.bodySizeMm, 1.5, 10),
       fontWeight: clamp(typography.fontWeight, fallback.typography.fontWeight, 100, 900),
       lineHeight: clamp(typography.lineHeight, fallback.typography.lineHeight, 0.8, 2.5),
@@ -165,6 +169,11 @@ export function normalizeWorkOrderTemplate(value?: Partial<WorkOrderTemplate> | 
       visible: footer.visible !== false,
       text: typeof footer.text === 'string' ? footer.text.trim() : fallback.footer.text,
       showPageNumber: footer.showPageNumber !== false,
+    },
+    layout: {
+      header: { x: clamp(layout.header?.x, 0, -30, 30), y: clamp(layout.header?.y, 0, -30, 30) },
+      table: { x: clamp(layout.table?.x, 0, -30, 30), y: clamp(layout.table?.y, 0, -30, 30) },
+      footer: { x: clamp(layout.footer?.x, 0, -30, 30), y: clamp(layout.footer?.y, 0, -30, 30) },
     },
   };
 }
@@ -229,6 +238,7 @@ export function WorkOrderPrintDocument({ orders, template: rawTemplate, classNam
     '--wo-font-weight': template.typography.fontWeight,
     '--wo-header-bg': template.table.headerBackground,
     '--wo-line-height': template.typography.lineHeight,
+    '--wo-customer-size': `${template.typography.customerSizeMm}mm`,
   } as CSSProperties;
   const pageRule = `@page work-order-generated { size: A4 ${template.orientation}; margin: 0; }`;
 
@@ -243,17 +253,17 @@ export function WorkOrderPrintDocument({ orders, template: rawTemplate, classNam
         .work-order-document .wo-head{align-items:flex-end;border-bottom:calc(var(--wo-border-width) * 3) solid #2b7fa3;display:flex;justify-content:space-between;min-height:25mm;padding-bottom:3mm}
         .work-order-document .wo-kicker{color:#397f9d;font-size:2mm;font-weight:700;letter-spacing:.08em;text-transform:uppercase}
         .work-order-document .wo-title{font-size:${template.typography.titleSizeMm}mm;line-height:1.1;margin:1.2mm 0 1.5mm;text-align:${template.typography.align}}
-        .work-order-document .wo-meta{color:#596d75;font-size:${template.typography.metaSizeMm}mm;margin:0}.work-order-document .wo-meta b{color:#216986}
+        .work-order-document .wo-meta{color:#596d75;font-size:${template.typography.metaSizeMm}mm;margin:0}.work-order-document .wo-meta b{color:#216986}.work-order-document .wo-meta .wo-customer{font-size:var(--wo-customer-size);font-weight:700}
         .work-order-document .wo-stat{color:#216986;text-align:right}.work-order-document .wo-stat strong{display:block;font-family:"Microsoft YaHei","PingFang SC",sans-serif;font-size:6mm;line-height:1}.work-order-document .wo-stat span{display:block;font-size:${template.typography.metaSizeMm}mm;margin-top:2mm}
         .work-order-document table{border-collapse:collapse;margin-top:5mm;table-layout:fixed;width:100%}.work-order-document th,.work-order-document td{border:var(--wo-border-width) var(--wo-border-style) var(--wo-border-color);padding:var(--wo-cell-padding);vertical-align:middle}.work-order-document th{background:var(--wo-header-bg);color:#405b66;font-size:calc(var(--wo-body-size) * .92);font-weight:700;height:9mm}.work-order-document td{height:10mm}.work-order-document .wo-bouquet{background:#f1f8fb}.work-order-document .wo-bouquet strong,.work-order-document .wo-bouquet small{display:block}.work-order-document .wo-bouquet small{color:#2b7fa3;font-family:monospace;font-size:calc(var(--wo-body-size) * .85);font-weight:600;margin-top:1mm}.work-order-document .wo-index{color:#2b7fa3;font-weight:700}.work-order-document .wo-footer{border-top:var(--wo-border-width) solid #c6dbe3;color:#687f88;font-size:${template.typography.metaSizeMm}mm;margin-top:5mm;padding-top:3mm}.work-order-document .wo-page{float:right}.work-order-document .wo-page-number::after{content:counter(page)}@media print{.work-order-document{box-shadow:none;break-after:page}.work-order-document thead{display:table-header-group}}
       `}</style>
       {template.header.visible && (
-        <header className="wo-head">
+        <header className="wo-head" style={{ transform: `translate(${template.layout.header.x}mm, ${template.layout.header.y}mm)` }}>
           <div>
             {template.header.kicker && <div className="wo-kicker">{template.header.kicker}</div>}
             <h1 className="wo-title">{template.title}</h1>
             <p className="wo-meta">
-              {template.header.showCustomer && <>客户：<b>{customerLabel(orders)}</b></>}
+              {template.header.showCustomer && <>客户：<b className="wo-customer">{customerLabel(orders)}</b></>}
               {template.header.showCustomer && template.header.showShipDate && ' · '}
               {template.header.showShipDate && <>出货日期：<b>{dateLabel(orders, shipDateLabel)}</b></>}
             </p>
@@ -261,12 +271,12 @@ export function WorkOrderPrintDocument({ orders, template: rawTemplate, classNam
           {template.header.showOrderCount && <div className="wo-stat"><strong>{totalQuantity} 扎</strong><span>{grouped.length} 款 · {orders.length} 单</span></div>}
         </header>
       )}
-      <table aria-label={`${template.title}明细`}>
+      <table aria-label={`${template.title}明细`} style={{ transform: `translate(${template.layout.table.x}mm, ${template.layout.table.y}mm)` }}>
         <colgroup>{visibleColumns.map((column) => <col key={column.id} style={{ width: `${column.width}%` }} />)}</colgroup>
         <thead><tr>{visibleColumns.map((column) => <th key={column.id} scope="col" style={{ textAlign: column.align }}>{column.label}</th>)}</tr></thead>
         <tbody>{grouped.map((order, index) => <WorkOrderRow columns={visibleColumns} index={index} key={order.recordId} order={order} />)}</tbody>
       </table>
-      {template.footer.visible && <footer className="wo-footer">{template.footer.text}{template.footer.showPageNumber && <span className="wo-page">第 <span className="wo-page-number" /> 页</span>}</footer>}
+      {template.footer.visible && <footer className="wo-footer" style={{ transform: `translate(${template.layout.footer.x}mm, ${template.layout.footer.y}mm)` }}>{template.footer.text}{template.footer.showPageNumber && <span className="wo-page">第 <span className="wo-page-number" /> 页</span>}</footer>}
     </article>
   );
 }

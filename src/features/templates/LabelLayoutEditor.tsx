@@ -6,6 +6,7 @@ import { adjustPrintDate, type PrintOrder } from '../../lib/print-model';
 import { clampLabelElementToBounds, type LabelElement, type LabelElementKind, type LabelTemplate } from '../../domain/templates';
 
 const labels: Record<LabelElementKind, string> = { name: '花束名称', barcode: '条码', code: '花束编码', date: '标签日期', customer: '客户名称', careInstructions: '养护说明', care: '养护说明' };
+const editorElements = (elements: LabelElement[]) => elements.filter((element, index, all) => element.kind !== 'care' && all.findIndex((candidate) => candidate.kind === element.kind) === index);
 const fallbackOrder: PrintOrder = { recordId: 'layout-preview', orderNo: '', shipDate: '2026/08/23', customer: '客户名称', category: '', careInstructions: '养护说明', productName: '花束名称', productCode: '2020016014883', quantity: 1, note: '', recipe: [], issues: [] };
 
 function valueFor(element: LabelElement, order: PrintOrder, offset: number) {
@@ -33,6 +34,7 @@ export function LabelLayoutEditor({ template, order, onChange }: { template: Lab
   const transformer = useRef<Konva.Transformer>(null);
   const [selectedId, setSelectedId] = useState<string | null>(template.elements.find((element) => element.visible)?.id ?? null);
   const selected = template.elements.find((element) => element.id === selectedId);
+  const visibleElements = editorElements(template.elements);
   useEffect(() => { if (selectedId && !template.elements.some((element) => element.id === selectedId)) setSelectedId(null); }, [selectedId, template.elements]);
   const update = (id: string, patch: Partial<LabelElement>) => onChange({ ...template, elements: template.elements.map((element) => element.id === id ? clampLabelElementToBounds({ ...element, ...patch }, template) : element) });
   const choose = (id: string, node?: Konva.Node) => { setSelectedId(id); if (node) { transformer.current?.nodes([node]); transformer.current?.getLayer()?.batchDraw(); } };
