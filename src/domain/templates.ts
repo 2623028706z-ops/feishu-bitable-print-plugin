@@ -52,18 +52,37 @@ export type LabelTemplate = {
 };
 
 export type A4Column = { id: string; label: string; width: number; visible: boolean; align: TextAlign };
+export type A4Presentation = {
+  kicker: string;
+  showCustomer: boolean;
+  showShipDate: boolean;
+  showOrderCount: boolean;
+  footerText: string;
+  showPageNumber: boolean;
+  titleSizeMm: number;
+  metaSizeMm: number;
+  lineHeight: number;
+  cellPaddingMm: number;
+  headerBackground: string;
+};
 export type A4Template = {
   version: number; type: 'a4'; id: string; name: string; isDefault: boolean; orientation: 'landscape' | 'portrait';
   margins: { top: number; right: number; bottom: number; left: number };
   title: string; titleVisible: boolean; headerVisible: boolean; footerVisible: boolean; repeatHeader: boolean;
   fontFamily: string; fontSize: number; fontWeight: number; textAlign: TextAlign; rowHeight: number; padding: number;
   borderVisible: boolean; borderWidth: number; borderStyle: 'solid' | 'dashed' | 'dotted'; borderColor: string;
-  columns: A4Column[];
+  columns: A4Column[]; presentation?: A4Presentation;
 };
 
 export type PrintTemplate = LabelTemplate | A4Template;
 
 const defaultFont = 'Microsoft YaHei, 微软雅黑, sans-serif';
+
+function safeFontFamily(value: unknown, fallback: string): string {
+  if (typeof value !== 'string') return fallback;
+  const trimmed = value.trim();
+  return trimmed && trimmed.length <= 160 && !/[{};<>"']/.test(trimmed) ? trimmed : fallback;
+}
 
 function labelDefaults(): LabelTemplate {
   const elements: LabelElement[] = [
@@ -90,6 +109,7 @@ function a4Defaults(): A4Template {
     version: CURRENT_TEMPLATE_VERSION, type: 'a4', id: 'system-a4-default', name: '标准加工单', isDefault: true, orientation: 'landscape',
     margins: { top: 10, right: 12, bottom: 8, left: 12 }, title: '花束加工单', titleVisible: true, headerVisible: true, footerVisible: true, repeatHeader: true,
     fontFamily: defaultFont, fontSize: 2.8, fontWeight: 400, textAlign: 'left', rowHeight: 10, padding: 2, borderVisible: true, borderWidth: .25, borderStyle: 'solid', borderColor: '#9da9a4',
+    presentation: { kicker: '花众生产打印', showCustomer: true, showShipDate: true, showOrderCount: true, footerText: '加工扎数取销售数量（扎），同花束按订单合并。', showPageNumber: true, titleSizeMm: 7, metaSizeMm: 2.5, lineHeight: 1.35, cellPaddingMm: 2, headerBackground: '#edf2ef' },
     columns: A4_REQUIRED_COLUMN_IDS.map((id, index) => ({ id, label: labels[id], width: [23, 22, 12, 10, 12, 21][index], visible: true, align: index === 0 || index === 1 || index === 5 ? 'left' : 'center' })),
   };
 }
@@ -127,7 +147,8 @@ export function migrateTemplateConfig(raw: unknown, type: TemplateType): PrintTe
   const source = raw && typeof raw === 'object' ? raw as Record<string, any> : {};
   const base = (type === 'label' ? labelDefaults() : a4Defaults()) as any;
   if (type === 'a4') {
-    const result = { ...base, ...source, version: CURRENT_TEMPLATE_VERSION, type: 'a4', margins: { ...base.margins, ...(source.margins || {}) }, columns: Array.isArray(source.columns) ? source.columns : base.columns };
+    const presentation = { ...base.presentation, ...(source.presentation || {}) };
+    const result = { ...base, ...source, version: CURRENT_TEMPLATE_VERSION, type: 'a4', margins: { ...base.margins, ...(source.margins || {}) }, presentation, columns: Array.isArray(source.columns) ? source.columns : base.columns };
     result.columns = result.columns.map((column: any) => ({ ...column, width: numberValue(column.width, 10, 1), visible: column.visible !== false, align: ['left', 'center', 'right'].includes(column.align) ? column.align : 'left' }));
     if (!validateA4Columns(result.columns).valid) result.columns = base.columns;
     return result;
@@ -142,8 +163,9 @@ export function migrateTemplateConfig(raw: unknown, type: TemplateType): PrintTe
   result.marginX = Math.min(50, numberValue(source.marginX ?? result.grid.marginXmm, base.marginX)); result.marginY = Math.min(50, numberValue(source.marginY ?? result.grid.marginYmm, base.marginY));
   result.grid = { columns: result.columns, rows: result.rows, gapXmm: result.gapX, gapYmm: result.gapY, marginXmm: result.marginX, marginYmm: result.marginY };
   result.fixedCopies = Math.min(5000, Math.max(1, Math.round(numberValue(source.fixedCopies, 1, 1))));
-  result.styles = { fontFamily: typeof result.styles.fontFamily === 'string' ? result.styles.fontFamily : base.styles.fontFamily, fontSize: Math.min(20, numberValue(result.styles.fontSize, base.styles.fontSize, 1)), fontWeight: Math.min(900, numberValue(result.styles.fontWeight, base.styles.fontWeight, 100)), align: ['left', 'center', 'right'].includes(result.styles.align) ? result.styles.align : base.styles.align, lineHeight: Math.min(2.5, Math.max(.8, numberValue(result.styles.lineHeight, base.styles.lineHeight, .8))), padding: Math.min(20, numberValue(result.styles.padding, base.styles.padding)), contentGap: Math.min(20, numberValue(result.styles.contentGap, base.styles.contentGap)) };
+  result.labelDateOffsetDays = Math.min(3650, Math.max(0, Math.round(numberValue(source.labelDateOffsetDays, 0, 0))));
+  result.styles = { fontFamily: safeFontFamily(result.styles.fontFamily, base.styles.fontFamily), fontSize: Math.min(20, numberValue(result.styles.fontSize, base.styles.fontSize, 1)), fontWeight: Math.min(900, numberValue(result.styles.fontWeight, base.styles.fontWeight, 100)), align: ['left', 'center', 'right'].includes(result.styles.align) ? result.styles.align : base.styles.align, lineHeight: Math.min(2.5, Math.max(.8, numberValue(result.styles.lineHeight, base.styles.lineHeight, .8))), padding: Math.min(20, numberValue(result.styles.padding, base.styles.padding)), contentGap: Math.min(20, numberValue(result.styles.contentGap, base.styles.contentGap)) };
   result.fontFamily = result.styles.fontFamily; result.fontSize = result.styles.fontSize; result.fontWeight = result.styles.fontWeight; result.textAlign = result.styles.align;
-  result.elements = result.elements.map((element: any) => { const align = element.textAlign ?? element.align ?? result.styles.align; return clampLabelElementToBounds({ ...element, kind: element.kind === 'care' ? 'care' : element.kind, width: numberValue(element.width, 1, .5), height: numberValue(element.height, 1, .5), fontSize: numberValue(element.fontSize ?? element.fontSizeMm, result.styles.fontSize, 1), fontSizeMm: numberValue(element.fontSizeMm ?? element.fontSize, result.styles.fontSize, 1), align, textAlign: align }, result); });
+  result.elements = result.elements.map((element: any) => { const align = element.textAlign ?? element.align ?? result.styles.align; return clampLabelElementToBounds({ ...element, kind: element.kind === 'care' ? 'care' : element.kind, width: numberValue(element.width, 1, .5), height: numberValue(element.height, 1, .5), fontFamily: safeFontFamily(element.fontFamily, result.styles.fontFamily), fontSize: numberValue(element.fontSize ?? element.fontSizeMm, result.styles.fontSize, 1), fontSizeMm: numberValue(element.fontSizeMm ?? element.fontSize, result.styles.fontSize, 1), align, textAlign: align }, result); });
   return result;
 }

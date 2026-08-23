@@ -13,7 +13,7 @@ type LinkedRecordGroup = { tableId: string; recordIds: string[] };
 const FIELD_ALIASES = {
   orderNo: ['订单编号'],
   shipDate: ['出货日期'],
-  productCode: ['花束编码'],
+  productCode: ['花束编码', '花束编码数值', '编码数值', '花束编码（数值）'],
   customer: ['客户名称', '客户'],
   category: ['品类', '类别', '花束品类', '品类名称', '商品品类', '花束类别', '商品分类', '花束分类', '产品分类', '产品品类', '分类'],
   careInstructions: ['养护说明'],
@@ -29,7 +29,7 @@ const FIELD_ALIASES = {
 } as const;
 
 const PRODUCT_TABLE_NAMES = ['成品汇总表', '成品配方表', '成品配方', '成品库', '产品库'] as const;
-const PRODUCT_CODE_ALIASES = ['花束编码', '成品编码', '商品编码', '产品编码'] as const;
+const PRODUCT_CODE_ALIASES = ['花束编码', '花束编码数值', '编码数值', '成品编码', '商品编码', '产品编码'] as const;
 
 export function text(value: unknown, depth = 0): string {
   if (depth > 6) return '';
@@ -140,8 +140,41 @@ function fieldTargetTableIds(metas: readonly RawFieldMeta[]): Record<string, str
   );
 }
 
+function resolveFieldId(labels: Record<string, string>, names: readonly string[]): string | undefined {
+  for (const name of names) {
+    if (labels[name]) return labels[name];
+  }
+
+  const entries = Object.entries(labels);
+  for (const name of names) {
+    const target = normalizedFieldName(name);
+    const match = entries.find(([label]) => normalizedFieldName(label) === target);
+    if (match) return match[1];
+  }
+
+  for (const name of names) {
+    const target = comparableFieldName(name);
+    const match = entries.find(([label]) => comparableFieldName(label) === target);
+    if (match) return match[1];
+  }
+
+  // Field names in production bases often carry a unique suffix such as
+  // "（关联）" or "数值". Accept that suffix only when the match is
+  // unambiguous, so two similarly named fields cannot be selected randomly.
+  for (const name of names) {
+    const target = comparableFieldName(name);
+    if (target.length < 2) continue;
+    const matches = entries.filter(([label]) => {
+      const comparable = comparableFieldName(label);
+      return comparable.includes(target) || target.includes(comparable);
+    });
+    if (matches.length === 1) return matches[0][1];
+  }
+  return undefined;
+}
+
 function fieldId(labels: Record<string, string>, names: readonly string[]): string | undefined {
-  return names.map((name) => labels[name]).find(Boolean);
+  return resolveFieldId(labels, names);
 }
 
 function recordId(value: unknown): string {
@@ -200,18 +233,80 @@ export function extractLinkedRecordGroups(value: unknown, fallbackTableId = ''):
   return [...grouped.entries()].map(([tableId, recordIds]) => ({ tableId, recordIds: [...recordIds] }));
 }
 
-async function recipeLinesFromLinks(links: LinkedRecordGroup[], quantity: number): Promise<RecipeLine[]> {
+type PageResult = {
+  records?: RawRecord[];
+  hasMore?: boolean;
+  pageToken?: unknown;
+};
+
+type PagedRecordTable = {
+  getRecordsByPage: (options: Record<string, unknown>) => Promise<PageResult>;
+};
+
+/** Read every page while guarding against a broken host repeating its token. */
+async function allRecordsByPage(table: PagedRecordTable, options: Record<string, unknown>): Promise<RawRecord[]> {
+  const records: RawRecord[] = [];
+  const seenTokens = new Set<string>();
+  let pageToken: unknown;
+
+  for (;;) {
+    const response = await table.getRecordsByPage({
+      ...options,
+      pageSize: options.pageSize ?? 200,
+      ...(pageToken === undefined ? {} : { pageToken }),
+    });
+    records.push(...(response.records ?? []));
+    if (!response.hasMore) break;
+    if (response.pageToken === undefined || response.pageToken === null) throw new Error('飞书分页响应缺少 pageToken');
+
+    const tokenKey = String(response.pageToken);
+    if (seenTokens.has(tokenKey)) throw new Error('飞书分页响应返回重复 pageToken');
+    seenTokens.add(tokenKey);
+    pageToken = response.pageToken;
+  }
+  return records;
+}
+
+const MAX_RECORD_IDS_PER_REQUEST = 1000;
+
+type RecordByIdTable = {
+  getRecordsByIds: (recordIds: string[], refreshLinkValue?: boolean) => Promise<RawRecord[]>;
+};
+
+/** The SDK caps getRecordsByIds at 1000 ids; preserve requested order across chunks. */
+async function recordsByIds(table: RecordByIdTable, recordIds: string[], refreshLinkValue = true): Promise<RawRecord[]> {
+  const records: RawRecord[] = [];
+  for (let start = 0; start < recordIds.length; start += MAX_RECORD_IDS_PER_REQUEST) {
+    const chunk = recordIds.slice(start, start + MAX_RECORD_IDS_PER_REQUEST);
+    const chunkRecords = await table.getRecordsByIds(chunk, refreshLinkValue);
+    if (chunkRecords.length === chunk.length) {
+      chunkRecords.forEach((record, index) => {
+        if (!record.recordId) record.recordId = chunk[index];
+      });
+    }
+    records.push(...chunkRecords);
+  }
+
+  const byId = new Map(records.map((record) => [record.recordId, record]));
+  if (recordIds.every((id) => byId.has(id))) return recordIds.map((id) => byId.get(id)!);
+  return records;
+}
+
+const recipeLinkCache = new Map<string, Promise<RecipeLine[]>>();
+
+async function loadRecipeLinesFromLinks(links: LinkedRecordGroup[], quantity: number): Promise<RecipeLine[]> {
   const grouped = new Map<string, RecipeLine>();
   for (const link of links) {
     const recipeTable = await bitable.base.getTableById(link.tableId);
-    const recipeRecords = await recipeTable.getRecordsByIds(link.recordIds, true);
+    const recipeRecords = await recordsByIds(recipeTable, link.recordIds, true);
     const recipeMeta = await recipeTable.getFieldMetaList();
     const recipeLabels = Object.fromEntries(recipeMeta.map((meta) => [meta.name, meta.id]));
     for (const recipeRecord of recipeRecords) {
-      const material = text(findField(recipeRecord.fields, FIELD_ALIASES.material, recipeLabels)) || '未命名花材';
-      const stemsPerBunch = number(findField(recipeRecord.fields, FIELD_ALIASES.stems, recipeLabels));
-      const unit = text(findField(recipeRecord.fields, FIELD_ALIASES.unit, recipeLabels)) || '支';
-      const note = text(findField(recipeRecord.fields, FIELD_ALIASES.recipeNote, recipeLabels));
+      const fields = recipeRecord.fields ?? {};
+      const material = text(findField(fields, FIELD_ALIASES.material, recipeLabels)) || '未命名花材';
+      const stemsPerBunch = number(findField(fields, FIELD_ALIASES.stems, recipeLabels));
+      const unit = text(findField(fields, FIELD_ALIASES.unit, recipeLabels)) || '支';
+      const note = text(findField(fields, FIELD_ALIASES.recipeNote, recipeLabels));
       const current = grouped.get(material);
       if (current) current.totalStems += stemsPerBunch * quantity;
       else grouped.set(material, { material, stemsPerBunch, unit, totalStems: stemsPerBunch * quantity, note });
@@ -220,12 +315,22 @@ async function recipeLinesFromLinks(links: LinkedRecordGroup[], quantity: number
   return [...grouped.values()];
 }
 
+function recipeLinesFromLinks(links: LinkedRecordGroup[], quantity: number): Promise<RecipeLine[]> {
+  const key = `${quantity}|${links.map((link) => `${link.tableId}:${[...link.recordIds].sort().join(',')}`).sort().join('|')}`;
+  const cached = recipeLinkCache.get(key);
+  if (cached) return cached;
+  const pending = loadRecipeLinesFromLinks(links, quantity);
+  recipeLinkCache.set(key, pending);
+  return pending;
+}
+
 type ProductTableLike = {
   getFieldMetaList: () => Promise<RawFieldMeta[]>;
-  getRecordsByPage: (options: { pageSize: number; stringValue: boolean }) => Promise<{ records: RawRecord[] }>;
+  getRecordsByPage: (options: Record<string, unknown>) => Promise<PageResult>;
+  getRecordsByIds: (recordIds: string[], refreshLinkValue?: boolean) => Promise<RawRecord[]>;
 };
 
-async function findProductTable(): Promise<ProductTableLike | undefined> {
+async function findProductTableUncached(): Promise<ProductTableLike | undefined> {
   const base = bitable.base as unknown as {
     getTableByName?: (name: string) => Promise<ProductTableLike>;
     getTableMetaList?: () => Promise<Array<{ id: string; name: string }>>;
@@ -248,7 +353,20 @@ async function findProductTable(): Promise<ProductTableLike | undefined> {
   }
 }
 
-async function recipeFromProductTable(productName: string, productCode: string, quantity: number): Promise<RecipeLine[]> {
+let productTablePromise: Promise<ProductTableLike | undefined> | undefined;
+function findProductTable(): Promise<ProductTableLike | undefined> {
+  if (!productTablePromise) {
+    productTablePromise = findProductTableUncached().catch((error) => {
+      productTablePromise = undefined;
+      throw error;
+    });
+  }
+  return productTablePromise;
+}
+
+const productRecipeCache = new Map<string, Promise<RecipeLine[]>>();
+
+async function loadRecipeFromProductTable(productName: string, productCode: string, quantity: number): Promise<RecipeLine[]> {
   if (!productName && !productCode) return [];
   try {
     const productTable = await findProductTable();
@@ -256,21 +374,23 @@ async function recipeFromProductTable(productName: string, productCode: string, 
     const productMeta = await productTable.getFieldMetaList();
     const productLabels = Object.fromEntries(productMeta.map((meta) => [meta.name, meta.id]));
     const productTargets = fieldTargetTableIds(productMeta);
-    const productNameField = productLabels['花束名称'] ?? productLabels['成品名称'] ?? productLabels['商品名称'];
-    const recipeField = productLabels['配方'] ?? productLabels['成品配方'];
-    if (!productNameField || !recipeField) return [];
+    const productNameField = fieldId(productLabels, FIELD_ALIASES.productName);
+    const recipeField = fieldId(productLabels, FIELD_ALIASES.recipeLink);
     const productCodeField = fieldId(productLabels, PRODUCT_CODE_ALIASES);
-    const response = await productTable.getRecordsByPage({ pageSize: 200, stringValue: false });
-    const productRecords = response.records.filter((record) => {
+    if (!productNameField && !productCodeField) return [];
+    const productRecords = (await allRecordsByPage(productTable, { pageSize: 200, stringValue: false })).filter((record) => {
       const fields = record.fields ?? {};
-      const recordName = text(fields[productNameField]).trim();
+      const recordName = productNameField ? text(fields[productNameField]).trim() : '';
       const recordCode = productCodeField ? text(fields[productCodeField]).trim() : '';
       return Boolean((productCode && recordCode && recordCode === productCode.trim()) || (productName && recordName === productName.trim()));
     });
     const grouped = new Map<string, RecipeLine>();
     for (const productRecord of productRecords) {
-      const recipeLinks = extractLinkedRecordGroups(productRecord.fields?.[recipeField], productTargets[recipeField]);
-      const recipeLines = await recipeLinesFromLinks(recipeLinks, quantity);
+      const fields = productRecord.fields ?? {};
+      const recipeLinks = recipeField
+        ? extractLinkedRecordGroups(fields[recipeField], productTargets[recipeField])
+        : [];
+      const recipeLines = recipeLinks.length ? await recipeLinesFromLinks(recipeLinks, quantity) : recipeFromRecord(fields, productLabels, quantity);
       for (const line of recipeLines) {
         const current = grouped.get(line.material);
         if (current) current.totalStems += line.totalStems;
@@ -281,6 +401,21 @@ async function recipeFromProductTable(productName: string, productCode: string, 
   } catch {
     return [];
   }
+}
+
+function recipeFromProductTable(productName: string, productCode: string, quantity: number): Promise<RecipeLine[]> {
+  const key = `${productCode.trim()}|${productName.trim()}|${quantity}`;
+  const cached = productRecipeCache.get(key);
+  if (cached) return cached;
+  const pending = loadRecipeFromProductTable(productName, productCode, quantity);
+  productRecipeCache.set(key, pending);
+  return pending;
+}
+
+function clearRecipeCaches(): void {
+  recipeLinkCache.clear();
+  productRecipeCache.clear();
+  productTablePromise = undefined;
 }
 
 async function linkedRecipe(
@@ -318,7 +453,7 @@ async function linkedRecipe(
     const productContexts = await Promise.all(
       productLinks.map(async (productLink) => {
         const productTable = await bitable.base.getTableById(productLink.tableId);
-        const productRecords = await productTable.getRecordsByIds(productLink.recordIds, true);
+        const productRecords = await recordsByIds(productTable, productLink.recordIds, true);
         const productMeta = await productTable.getFieldMetaList();
         return {
           productRecords,
@@ -331,13 +466,17 @@ async function linkedRecipe(
       const recipeField = fieldId(productLabels, FIELD_ALIASES.recipeLink);
       return recipeField
         ? productRecords.flatMap((record) =>
-            extractLinkedRecordGroups(record.fields[recipeField], productTargets[recipeField]),
+            extractLinkedRecordGroups(record.fields?.[recipeField], productTargets[recipeField]),
           )
         : [];
     });
-    return recipeLinesFromLinks(recipeLinks, quantity);
+    const linkedRecipeLines = await recipeLinesFromLinks(recipeLinks, quantity);
+    if (linkedRecipeLines.length) return linkedRecipeLines;
+    const fallbackRecipe = await recipeFromProductTable(productName, productCode, quantity);
+    return fallbackRecipe.length ? fallbackRecipe : recipeFromRecord(fields, labels, quantity);
   } catch {
-    return recipeFromRecord(fields, labels, quantity);
+    const fallbackRecipe = await recipeFromProductTable(productName, productCode, quantity);
+    return fallbackRecipe.length ? fallbackRecipe : recipeFromRecord(fields, labels, quantity);
   }
 }
 
@@ -381,6 +520,7 @@ async function fieldLabels(
 }
 
 export async function loadFeishuOrders(): Promise<{ orders: PrintOrder[]; source: string; tableName: string }> {
+  clearRecipeCaches();
   const table = await bitable.base.getActiveTable();
   const { labels, targets } = await fieldLabels(table);
   const selection = await bitable.base.getSelection();
@@ -389,8 +529,8 @@ export async function loadFeishuOrders(): Promise<{ orders: PrintOrder[]; source
   const view = selection.viewId ? await table.getViewById(selection.viewId) : await table.getActiveView();
   const selectedIds = await (view as IGridView).getSelectedRecordIdList().catch(() => [] as string[]);
   if (selection.tableId === table.id && selectedIds.length) {
-    const records = await table.getRecordsByIds(selectedIds, true);
-    return { orders: await Promise.all(records.map((record, index) => normalizeRecord({ ...record, recordId: selectedIds[index] }, labels, targets))), source: `已选 ${selectedIds.length} 条记录`, tableName: activeName };
+    const records = await recordsByIds(table, selectedIds, true);
+    return { orders: await Promise.all(records.map((record, index) => normalizeRecord({ ...record, recordId: record.recordId ?? selectedIds[index] }, labels, targets))), source: `已选 ${selectedIds.length} 条记录`, tableName: activeName };
   }
   if (selection.tableId === table.id && selection.recordId) {
     const record = await table.getRecordById(selection.recordId, true);
@@ -398,9 +538,9 @@ export async function loadFeishuOrders(): Promise<{ orders: PrintOrder[]; source
   }
 
   // Keep structured link values (tableId/recordIds) so product recipes can be expanded.
-  const response = await table.getRecordsByPage({ pageSize: 200, viewId: view.id, stringValue: false });
+  const records = await allRecordsByPage(table, { pageSize: 200, viewId: view.id, stringValue: false });
   return {
-    orders: await Promise.all(response.records.map((record) => normalizeRecord(record, labels, targets))),
+    orders: await Promise.all(records.map((record) => normalizeRecord(record, labels, targets))),
     source: `当前视图 · ${await view.getName()}`,
     tableName: activeName,
   };

@@ -30,7 +30,14 @@ createServer((request, response) => {
     response.end(JSON.stringify({ status: 'ok' }));
     return;
   }
-  const file = fileFor(request.url || '/');
+  let file;
+  try {
+    file = fileFor(request.url || '/');
+  } catch {
+    response.writeHead(400, { 'Content-Type': 'text/plain; charset=utf-8', 'Cache-Control': 'no-store' });
+    response.end('Bad request');
+    return;
+  }
   if (!file || !existsSync(file)) {
     response.writeHead(404, { 'Content-Type': 'text/plain; charset=utf-8' });
     response.end('Not found');

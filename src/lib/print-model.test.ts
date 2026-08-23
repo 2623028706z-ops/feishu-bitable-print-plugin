@@ -15,6 +15,7 @@ describe('print model', () => {
   it('expands label copies from sales quantity only when enabled', () => {
     expect(expandLabelCopies(sampleOrders, defaultLabelConfig)).toHaveLength(2);
     expect(expandLabelCopies(sampleOrders, { ...defaultLabelConfig, copiesByQuantity: true })).toHaveLength(20);
+    expect(expandLabelCopies([sampleOrders[0]], defaultLabelConfig, 5000)).toHaveLength(5000);
   });
 
   it('aggregates matching products and recalculates recipe totals', () => {

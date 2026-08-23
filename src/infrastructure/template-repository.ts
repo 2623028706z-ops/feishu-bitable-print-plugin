@@ -21,6 +21,28 @@ export type TemplateCleanupFailure = {
 type BaseLike = { getTableByName: (name: string) => Promise<any>; addTable?: (config: any) => Promise<any> };
 type RepositorySnapshot = { templates: PrintTemplate[]; available: boolean; editable: boolean; reason?: 'missing-table' | 'permission-denied' };
 
+type PageResponse = { records?: any[]; hasMore?: boolean; pageToken?: unknown };
+
+async function readAllPages(table: { getRecordsByPage: (options: Record<string, unknown>) => Promise<PageResponse> }): Promise<any[]> {
+  const records: any[] = [];
+  const seenTokens = new Set<string>();
+  let pageToken: unknown;
+  for (;;) {
+    const response = await table.getRecordsByPage({
+      pageSize: 200,
+      stringValue: false,
+      ...(pageToken === undefined ? {} : { pageToken }),
+    });
+    records.push(...(response.records ?? []));
+    if (!response.hasMore) return records;
+    if (response.pageToken === undefined || response.pageToken === null) throw new Error('飞书分页响应缺少 pageToken');
+    const token = String(response.pageToken);
+    if (seenTokens.has(token)) throw new Error('飞书分页响应返回重复 pageToken');
+    seenTokens.add(token);
+    pageToken = response.pageToken;
+  }
+}
+
 function display(value: unknown): string {
   if (value === null || value === undefined) return '';
   if (typeof value === 'string' || typeof value === 'number' || typeof value === 'boolean') return String(value);
@@ -68,7 +90,7 @@ export class TemplateRepository {
 
   private async readRecords(): Promise<any[]> {
     const table = await this.getTable(); if (!table) return [];
-    try { const response = await table.getRecordsByPage({ pageSize: 200, stringValue: false }); return response.records || []; } catch (error) { if (isPermission(error)) throw new TemplatePermissionError(); throw error; }
+    try { return await readAllPages(table); } catch (error) { if (isPermission(error)) throw new TemplatePermissionError(); throw error; }
   }
 
   private decode(record: any): PrintTemplate | null {
@@ -134,7 +156,9 @@ export class TemplateRepository {
   async initialize(): Promise<boolean> {
     if (!this.base.addTable) return false;
     if (await this.getTable()) return true;
-    try { await this.base.addTable({ name: this.tableName, fields: [{ name: TEMPLATE_FIELD_NAMES.id, type: 'Text' }, { name: TEMPLATE_FIELD_NAMES.name, type: 'Text' }, { name: TEMPLATE_FIELD_NAMES.type, type: 'Text' }, { name: TEMPLATE_FIELD_NAMES.paper, type: 'Text' }, { name: TEMPLATE_FIELD_NAMES.json, type: 'Text' }, { name: TEMPLATE_FIELD_NAMES.version, type: 'Number' }, { name: TEMPLATE_FIELD_NAMES.isDefault, type: 'Checkbox' }, { name: TEMPLATE_FIELD_NAMES.status, type: 'Text' }] }); this.table = undefined; await this.getTable(); await this.save(createDefaultTemplate('label')); await this.save(createDefaultTemplate('a4')); return true; } catch (error) { if (isPermission(error)) throw new TemplatePermissionError('没有创建打印模板配置表的权限'); throw error; }
+    // Feishu Base JS SDK expects numeric FieldType enum values here:
+    // Text=1, Number=2, Checkbox=7.
+    try { await this.base.addTable({ name: this.tableName, fields: [{ name: TEMPLATE_FIELD_NAMES.id, type: 1 }, { name: TEMPLATE_FIELD_NAMES.name, type: 1 }, { name: TEMPLATE_FIELD_NAMES.type, type: 1 }, { name: TEMPLATE_FIELD_NAMES.paper, type: 1 }, { name: TEMPLATE_FIELD_NAMES.json, type: 1 }, { name: TEMPLATE_FIELD_NAMES.version, type: 2 }, { name: TEMPLATE_FIELD_NAMES.isDefault, type: 7 }, { name: TEMPLATE_FIELD_NAMES.status, type: 1 }] }); this.table = undefined; await this.getTable(); await this.save(createDefaultTemplate('label')); await this.save(createDefaultTemplate('a4')); return true; } catch (error) { if (isPermission(error)) throw new TemplatePermissionError('没有创建打印模板配置表的权限'); throw error; }
   }
 }
 

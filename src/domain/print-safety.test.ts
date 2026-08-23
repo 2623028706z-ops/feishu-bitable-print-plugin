@@ -8,7 +8,7 @@ import {
 } from './print-safety';
 
 describe('print safety domain', () => {
-  it('clamps fixed label copies to the supported 1-500 range', () => {
+  it('clamps fixed label copies to the supported 1-5000 range', () => {
     expect(clampFixedCopies(0)).toBe(1);
     expect(clampFixedCopies(3.6)).toBe(4);
     expect(clampFixedCopies(500)).toBe(500);

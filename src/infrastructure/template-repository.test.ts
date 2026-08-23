@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { createDefaultTemplate, type PrintTemplate } from '../domain/templates';
-import { TemplateRepository } from './template-repository';
+import { TemplateConflictError, TemplateRepository } from './template-repository';
 
 type StoredRecord = { recordId: string; fields: Record<string, unknown> };
 
@@ -77,5 +77,53 @@ describe('TemplateRepository default switching', () => {
     await expect(repository.setDefault(fixtureData.target.id)).rejects.toThrow('write failed for rec-target');
     expect(fixtureData.events).toEqual(['set:rec-target']);
     expect(repository.getLastDefaultCleanupFailures()).toEqual([]);
+  });
+
+  it('rejects a stale version instead of silently overwriting a shared template', async () => {
+    const fixtureData = fixture();
+    const repository = new TemplateRepository(fixtureData.base);
+    const current = fixtureData.records.find((record) => record.recordId === 'rec-target');
+    if (current) current.fields.版本号 = 2;
+
+    await expect(repository.save({ ...fixtureData.target, isDefault: true }, 0)).rejects.toBeInstanceOf(TemplateConflictError);
+    expect(fixtureData.events).toEqual([]);
+  });
+
+  it('uses numeric SDK field types when initializing the shared template table', async () => {
+    const fixtureData = fixture();
+    const addTable = vi.fn().mockResolvedValue({ tableId: 'tbl_templates', index: 0 });
+    const base = {
+      getTableByName: vi.fn()
+        .mockRejectedValueOnce(new Error('table not found'))
+        .mockResolvedValue(fixtureData.table),
+      addTable,
+    };
+    const repository = new TemplateRepository(base);
+
+    await expect(repository.initialize()).resolves.toBe(true);
+
+    expect(addTable).toHaveBeenCalledWith(expect.objectContaining({
+      fields: expect.arrayContaining([
+        expect.objectContaining({ name: '模板ID', type: 1 }),
+        expect.objectContaining({ name: '版本号', type: 2 }),
+        expect.objectContaining({ name: '是否默认', type: 7 }),
+      ]),
+    }));
+  });
+
+  it('reads every template configuration page', async () => {
+    const first = stored({ ...createDefaultTemplate('label'), id: 'label-page-1', isDefault: true }, 'rec-page-1');
+    const second = stored({ ...createDefaultTemplate('a4'), id: 'a4-page-2', isDefault: false }, 'rec-page-2');
+    const table = {
+      getFieldMetaList: vi.fn(async () => Object.keys(first.fields).map((name) => ({ id: name, name }))),
+      getRecordsByPage: vi.fn().mockImplementation(async ({ pageToken }: { pageToken?: string }) => pageToken ? { records: [second], hasMore: false } : { records: [first], hasMore: true, pageToken: 'next-page' }),
+    };
+    const repository = new TemplateRepository({ getTableByName: vi.fn(async () => table) });
+
+    const templates = await repository.list();
+
+    expect(templates.map((template) => template.id)).toEqual(['label-page-1', 'a4-page-2']);
+    expect(table.getRecordsByPage).toHaveBeenCalledTimes(2);
+    expect(table.getRecordsByPage).toHaveBeenLastCalledWith(expect.objectContaining({ pageToken: 'next-page' }));
   });
 });

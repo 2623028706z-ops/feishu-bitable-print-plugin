@@ -49,8 +49,38 @@ const clamp = (value: unknown, fallback: number, min: number, max: number) => {
   return Number.isFinite(number) ? Math.min(max, Math.max(min, number)) : fallback;
 };
 
+function normalizeVisibleColumnWidths(columns: WorkOrderColumn[]): WorkOrderColumn[] {
+  const visible = columns.filter((column) => column.visible);
+  if (!visible.length) return columns;
+  const total = visible.reduce((sum, column) => sum + column.width, 0);
+  if (!Number.isFinite(total) || total <= 0) return columns;
+  const scaled = new Map(visible.map((column) => [column.id, clamp((column.width / total) * 100, column.width, 4, 60)] as const));
+  let remaining = 100 - [...scaled.values()].reduce((sum, width) => sum + width, 0);
+  for (let pass = 0; pass < visible.length * 2 && Math.abs(remaining) > 0.01; pass += 1) {
+    const candidates = visible.filter((column) => {
+      const width = scaled.get(column.id) ?? column.width;
+      return remaining > 0 ? width < 60 : width > 4;
+    });
+    if (!candidates.length) break;
+    const delta = remaining / candidates.length;
+    candidates.forEach((column) => {
+      const current = scaled.get(column.id) ?? column.width;
+      const next = clamp(current + delta, current, 4, 60);
+      scaled.set(column.id, next);
+    });
+    remaining = 100 - [...scaled.values()].reduce((sum, width) => sum + width, 0);
+  }
+  return columns.map((column) => scaled.has(column.id) ? { ...column, width: scaled.get(column.id)! } : column);
+}
+
 function color(value: unknown, fallback: string) {
   return typeof value === 'string' && /^#[0-9a-f]{6}$/i.test(value) ? value : fallback;
+}
+
+function fontFamily(value: unknown, fallback: string): string {
+  if (typeof value !== 'string') return fallback;
+  const trimmed = value.trim();
+  return trimmed && trimmed.length <= 160 && !/[{};<>"']/.test(trimmed) ? trimmed : fallback;
 }
 
 export function createDefaultWorkOrderTemplate(): WorkOrderTemplate {
@@ -95,6 +125,7 @@ export function normalizeWorkOrderTemplate(value?: Partial<WorkOrderTemplate> | 
       required: defaultColumn.required,
     };
   });
+  const normalizedColumns = normalizeVisibleColumnWidths(columns);
   const margins = candidate.marginsMm ?? fallback.marginsMm;
   const typography = candidate.typography ?? fallback.typography;
   const table = candidate.table ?? fallback.table;
@@ -107,7 +138,7 @@ export function normalizeWorkOrderTemplate(value?: Partial<WorkOrderTemplate> | 
     orientation: candidate.orientation === 'portrait' ? 'portrait' : 'landscape',
     marginsMm: { top: clamp(margins.top, fallback.marginsMm.top, 0, 40), right: clamp(margins.right, fallback.marginsMm.right, 0, 40), bottom: clamp(margins.bottom, fallback.marginsMm.bottom, 0, 40), left: clamp(margins.left, fallback.marginsMm.left, 0, 40) },
     typography: {
-      fontFamily: typeof typography.fontFamily === 'string' && typography.fontFamily.trim() ? typography.fontFamily.trim() : DEFAULT_FONT,
+      fontFamily: fontFamily(typography.fontFamily, DEFAULT_FONT),
       titleSizeMm: clamp(typography.titleSizeMm, fallback.typography.titleSizeMm, 3, 15),
       metaSizeMm: clamp(typography.metaSizeMm, fallback.typography.metaSizeMm, 1.5, 8),
       bodySizeMm: clamp(typography.bodySizeMm, fallback.typography.bodySizeMm, 1.5, 10),
@@ -122,7 +153,7 @@ export function normalizeWorkOrderTemplate(value?: Partial<WorkOrderTemplate> | 
       headerBackground: color(table.headerBackground, fallback.table.headerBackground),
       cellPaddingMm: clamp(table.cellPaddingMm, fallback.table.cellPaddingMm, 0, 10),
     },
-    columns,
+    columns: normalizedColumns,
     header: {
       visible: header.visible !== false,
       kicker: typeof header.kicker === 'string' ? header.kicker.trim() : fallback.header.kicker,
@@ -214,7 +245,7 @@ export function WorkOrderPrintDocument({ orders, template: rawTemplate, classNam
         .work-order-document .wo-title{font-size:${template.typography.titleSizeMm}mm;line-height:1.1;margin:1.2mm 0 1.5mm;text-align:${template.typography.align}}
         .work-order-document .wo-meta{color:#596562;font-size:${template.typography.metaSizeMm}mm;margin:0}.work-order-document .wo-meta b{color:#274f43}
         .work-order-document .wo-stat{color:#274f43;text-align:right}.work-order-document .wo-stat strong{display:block;font-family:Georgia,serif;font-size:6mm;line-height:1}.work-order-document .wo-stat span{display:block;font-size:${template.typography.metaSizeMm}mm;margin-top:2mm}
-        .work-order-document table{border-collapse:collapse;margin-top:5mm;table-layout:fixed;width:100%}.work-order-document th,.work-order-document td{border:var(--wo-border-width) var(--wo-border-style) var(--wo-border-color);padding:var(--wo-cell-padding);vertical-align:middle}.work-order-document th{background:var(--wo-header-bg);color:#45534f;font-size:calc(var(--wo-body-size) * .92);font-weight:700;height:9mm}.work-order-document td{height:10mm}.work-order-document .wo-bouquet{background:#f4f7f5}.work-order-document .wo-bouquet strong,.work-order-document .wo-bouquet small{display:block}.work-order-document .wo-bouquet small{color:#176b54;font-family:monospace;font-size:calc(var(--wo-body-size) * .85);font-weight:600;margin-top:1mm}.work-order-document .wo-index{color:#176b54;font-weight:700}.work-order-document .wo-footer{border-top:var(--wo-border-width) solid #ccd3d0;color:#687172;font-size:${template.typography.metaSizeMm}mm;margin-top:5mm;padding-top:3mm}.work-order-document .wo-page{float:right}@media print{.work-order-document{box-shadow:none;break-after:page}.work-order-document thead{display:table-header-group}}
+        .work-order-document table{border-collapse:collapse;margin-top:5mm;table-layout:fixed;width:100%}.work-order-document th,.work-order-document td{border:var(--wo-border-width) var(--wo-border-style) var(--wo-border-color);padding:var(--wo-cell-padding);vertical-align:middle}.work-order-document th{background:var(--wo-header-bg);color:#45534f;font-size:calc(var(--wo-body-size) * .92);font-weight:700;height:9mm}.work-order-document td{height:10mm}.work-order-document .wo-bouquet{background:#f4f7f5}.work-order-document .wo-bouquet strong,.work-order-document .wo-bouquet small{display:block}.work-order-document .wo-bouquet small{color:#176b54;font-family:monospace;font-size:calc(var(--wo-body-size) * .85);font-weight:600;margin-top:1mm}.work-order-document .wo-index{color:#176b54;font-weight:700}.work-order-document .wo-footer{border-top:var(--wo-border-width) solid #ccd3d0;color:#687172;font-size:${template.typography.metaSizeMm}mm;margin-top:5mm;padding-top:3mm}.work-order-document .wo-page{float:right}.work-order-document .wo-page-number::after{content:counter(page)}@media print{.work-order-document{box-shadow:none;break-after:page}.work-order-document thead{display:table-header-group}}
       `}</style>
       {template.header.visible && (
         <header className="wo-head">
@@ -235,7 +266,7 @@ export function WorkOrderPrintDocument({ orders, template: rawTemplate, classNam
         <thead><tr>{visibleColumns.map((column) => <th key={column.id} scope="col" style={{ textAlign: column.align }}>{column.label}</th>)}</tr></thead>
         <tbody>{grouped.map((order, index) => <WorkOrderRow columns={visibleColumns} index={index} key={order.recordId} order={order} />)}</tbody>
       </table>
-      {template.footer.visible && <footer className="wo-footer">{template.footer.text}{template.footer.showPageNumber && <span className="wo-page">第 1 页</span>}</footer>}
+      {template.footer.visible && <footer className="wo-footer">{template.footer.text}{template.footer.showPageNumber && <span className="wo-page">第 <span className="wo-page-number" /> 页</span>}</footer>}
     </article>
   );
 }

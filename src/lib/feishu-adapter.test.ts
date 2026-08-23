@@ -293,4 +293,120 @@ describe('feishu link value parsing', () => {
     expect(result.orders[0].recipe[0]).toMatchObject({ material: '编码匹配花材', stemsPerBunch: 4, totalStems: 8 });
     expect(result.orders[0].issues).not.toContain('missing-recipe');
   });
+
+  it('falls back to BOM fields on a product row when no recipe link column exists', async () => {
+    const salesTable = {
+      id: 'tbl_sales_product_bom',
+      getName: vi.fn().mockResolvedValue('花众销售订单汇总表'),
+      getFieldMetaList: vi.fn().mockResolvedValue([
+        { id: 'fld_product', name: '花束名称' },
+        { id: 'fld_code', name: '花束编码' },
+        { id: 'fld_quantity', name: '销售数量' },
+      ]),
+      getViewById: vi.fn().mockResolvedValue({ getSelectedRecordIdList: vi.fn().mockResolvedValue([]), getName: vi.fn().mockResolvedValue('今日出货') }),
+      getRecordsByPage: vi.fn().mockResolvedValue({ records: [{ recordId: 'rec_sales_product_bom', fields: { fld_product: '成品花束', fld_code: 'BOM-001', fld_quantity: 2 } }] }),
+    };
+    const productTable = {
+      getFieldMetaList: vi.fn().mockResolvedValue([
+        { id: 'p_name', name: '花束名称' },
+        { id: 'p_code', name: '成品编码' },
+        { id: 'p_material', name: '花材名称' },
+        { id: 'p_stems', name: '花材用量（枝数）' },
+      ]),
+      getRecordsByPage: vi.fn().mockResolvedValue({ records: [{ recordId: 'rec_product_bom', fields: { p_name: '成品花束', p_code: 'BOM-001', p_material: '成品玫瑰', p_stems: 8 } }] }),
+      getRecordsByIds: vi.fn(),
+    };
+    vi.mocked(base.getActiveTable).mockResolvedValue(salesTable as never);
+    vi.mocked(base.getSelection).mockResolvedValue({ tableId: 'tbl_other', viewId: 'view_product_bom', recordId: null, fieldId: null, baseId: 'base' });
+    vi.mocked(base.getTableByName).mockImplementation(async (name) => name === '成品汇总表' ? productTable as never : Promise.reject(new Error('table not found')));
+
+    const result = await loadFeishuOrders();
+
+    expect(result.orders[0]?.recipe).toEqual([{ material: '成品玫瑰', stemsPerBunch: 8, unit: '支', totalStems: 16, note: '' }]);
+    expect(result.orders[0]?.issues).not.toContain('missing-recipe');
+  });
+
+  it('reads every view page instead of silently stopping at the first 200 records', async () => {
+    const pageOne = Array.from({ length: 200 }, (_, index) => ({ recordId: `rec-page-${index}`, fields: { product: `花束-${index}`, quantity: 1, material: '玫瑰', stems: 1 } }));
+    const pageTwo = [{ recordId: 'rec-page-200', fields: { product: '花束-200', quantity: 1, material: '玫瑰', stems: 1 } }];
+    const salesTable = {
+      id: 'tbl_sales_pages',
+      getName: vi.fn().mockResolvedValue('花众销售订单汇总表'),
+      getFieldMetaList: vi.fn().mockResolvedValue([
+        { id: 'product', name: '花束名称' }, { id: 'quantity', name: '销售数量' }, { id: 'material', name: '花材名称' }, { id: 'stems', name: '花材用量（枝数）' },
+      ]),
+      getViewById: vi.fn().mockResolvedValue({ getSelectedRecordIdList: vi.fn().mockResolvedValue([]), getName: vi.fn().mockResolvedValue('全量视图') }),
+      getRecordsByPage: vi.fn().mockImplementation(async ({ pageToken }: { pageToken?: number }) => pageToken === undefined ? { records: pageOne, hasMore: true, pageToken: 1 } : { records: pageTwo, hasMore: false }),
+    };
+    vi.mocked(base.getActiveTable).mockResolvedValue(salesTable as never);
+    vi.mocked(base.getSelection).mockResolvedValue({ tableId: 'tbl_other', viewId: 'view_pages', recordId: null, fieldId: null, baseId: 'base' });
+    vi.mocked(base.getTableByName).mockRejectedValue(new Error('table not found'));
+
+    const result = await loadFeishuOrders();
+
+    expect(result.orders).toHaveLength(201);
+    expect(salesTable.getRecordsByPage).toHaveBeenCalledTimes(2);
+    expect(salesTable.getRecordsByPage).toHaveBeenLastCalledWith(expect.objectContaining({ pageToken: 1 }));
+  });
+
+  it('chunks selected records at the SDK 1000-record limit', async () => {
+    const selectedIds = Array.from({ length: 1001 }, (_, index) => `rec-selected-${index}`);
+    const getRecordsByIds = vi.fn().mockImplementation(async (ids: string[]) => ids.map((recordId) => ({ recordId, fields: { product: '批量花束', quantity: 1 } })));
+    const salesTable = {
+      id: 'tbl_sales_selected',
+      getName: vi.fn().mockResolvedValue('花众销售订单汇总表'),
+      getFieldMetaList: vi.fn().mockResolvedValue([{ id: 'product', name: '花束名称' }, { id: 'quantity', name: '销售数量' }]),
+      getViewById: vi.fn().mockResolvedValue({ getSelectedRecordIdList: vi.fn().mockResolvedValue(selectedIds), getName: vi.fn().mockResolvedValue('已选记录') }),
+      getRecordsByIds,
+      getRecordsByPage: vi.fn(),
+    };
+    vi.mocked(base.getActiveTable).mockResolvedValue(salesTable as never);
+    vi.mocked(base.getSelection).mockResolvedValue({ tableId: salesTable.id, viewId: 'view_selected', recordId: null, fieldId: null, baseId: 'base' });
+    vi.mocked(base.getTableByName).mockRejectedValue(new Error('table not found'));
+
+    const result = await loadFeishuOrders();
+
+    expect(result.orders).toHaveLength(1001);
+    expect(getRecordsByIds.mock.calls.map(([ids]) => ids.length)).toEqual([1000, 1]);
+    expect(result.orders[1000]?.recordId).toBe('rec-selected-1000');
+  });
+
+  it('resolves linked product and recipe fields with business suffixes', async () => {
+    const salesTable = {
+      id: 'tbl_sales_suffix_links',
+      getName: vi.fn().mockResolvedValue('花众销售订单汇总表'),
+      getFieldMetaList: vi.fn().mockResolvedValue([
+        { id: 'fld_product', name: '花束名称（关联）', property: { tableId: 'tbl_products_suffix' } },
+        { id: 'fld_code', name: '花束编码数值' },
+        { id: 'fld_quantity', name: '销售数量' },
+      ]),
+      getViewById: vi.fn().mockResolvedValue({ getSelectedRecordIdList: vi.fn().mockResolvedValue([]), getName: vi.fn().mockResolvedValue('今日出货') }),
+      getRecordsByPage: vi.fn().mockResolvedValue({ records: [{ recordId: 'rec_sales_suffix', fields: { fld_product: { text: '后缀花束', recordIds: ['rec_product_suffix'] }, fld_code: 'SUFFIX-001', fld_quantity: 2 } }] }),
+    };
+    const productTable = {
+      getFieldMetaList: vi.fn().mockResolvedValue([
+        { id: 'p_name', name: '花束名称（查找）' },
+        { id: 'p_code', name: '花束编码数值' },
+        { id: 'p_recipe', name: '成品配方（关联）', property: { tableId: 'tbl_recipe_suffix' } },
+      ]),
+      getRecordsByIds: vi.fn().mockResolvedValue([{ recordId: 'rec_product_suffix', fields: { p_name: '后缀花束', p_code: 'SUFFIX-001', p_recipe: { recordIds: ['rec_recipe_suffix'] } } }]),
+      getRecordsByPage: vi.fn(),
+    };
+    const recipeTable = {
+      getFieldMetaList: vi.fn().mockResolvedValue([{ id: 'r_material', name: '花材名称' }, { id: 'r_stems', name: '花材用量（枝数）' }]),
+      getRecordsByIds: vi.fn().mockResolvedValue([{ recordId: 'rec_recipe_suffix', fields: { r_material: '后缀玫瑰', r_stems: 5 } }]),
+    };
+    vi.mocked(base.getActiveTable).mockResolvedValue(salesTable as never);
+    vi.mocked(base.getSelection).mockResolvedValue({ tableId: 'tbl_other', viewId: 'view_suffix_links', recordId: null, fieldId: null, baseId: 'base' });
+    vi.mocked(base.getTableById).mockImplementation(async (tableId) => {
+      if (tableId === 'tbl_products_suffix') return productTable as never;
+      if (tableId === 'tbl_recipe_suffix') return recipeTable as never;
+      throw new Error(`unexpected table ${tableId}`);
+    });
+
+    const result = await loadFeishuOrders();
+
+    expect(result.orders[0]?.recipe).toEqual([{ material: '后缀玫瑰', stemsPerBunch: 5, unit: '支', totalStems: 10, note: '' }]);
+    expect(result.orders[0]?.issues).not.toContain('missing-recipe');
+  });
 });
