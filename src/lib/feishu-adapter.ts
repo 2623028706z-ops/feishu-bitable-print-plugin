@@ -209,7 +209,8 @@ export async function loadFeishuOrders(): Promise<{ orders: PrintOrder[]; source
     return { orders: [await normalizeRecord({ ...record, recordId: selection.recordId }, labels)], source: '当前选中记录', tableName: activeName };
   }
 
-  const response = await table.getRecordsByPage({ pageSize: 200, viewId: view.id, stringValue: true });
+  // Keep structured link values (tableId/recordIds) so product recipes can be expanded.
+  const response = await table.getRecordsByPage({ pageSize: 200, viewId: view.id, stringValue: false });
   return {
     orders: await Promise.all(response.records.map((record) => normalizeRecord(record, labels))),
     source: `当前视图 · ${await view.getName()}`,
