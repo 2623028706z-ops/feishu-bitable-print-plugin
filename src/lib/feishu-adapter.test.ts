@@ -11,9 +11,14 @@ const { base } = vi.hoisted(() => ({
 
 vi.mock('@lark-base-open/js-sdk', () => ({ bitable: { base } }));
 
-import { extractLinkedRecordGroups, loadFeishuOrders } from './feishu-adapter';
+import { extractLinkedRecordGroups, loadFeishuOrders, text } from './feishu-adapter';
 
 describe('feishu link value parsing', () => {
+  it('extracts visible text from select and lookup wrappers', () => {
+    expect(text({ text: '', value: { option: '鲜花花束' } })).toBe('鲜花花束');
+    expect(text([{ label: '鲜花' }, { displayName: '礼盒' }])).toBe('鲜花、礼盒');
+  });
+
   it('reads the SDK link shape', () => {
     expect(
       extractLinkedRecordGroups({
@@ -66,7 +71,7 @@ describe('feishu link value parsing', () => {
         { id: 'fld_customer', name: '客户名称' },
         { id: 'fld_product', name: '花束名称', property: { tableId: 'tbl_products' } },
         { id: 'fld_quantity', name: '销售数量（扎）' },
-        { id: 'fld_category', name: '品类' },
+        { id: 'fld_category', name: '品类（关联）' },
         { id: 'fld_care', name: '养护说明' },
       ]),
       getViewById: vi.fn().mockResolvedValue({
@@ -142,6 +147,7 @@ describe('feishu link value parsing', () => {
 
     expect(result.orders).toHaveLength(1);
     expect(result.orders[0].productName).toBe('云间甜梦');
+    expect(result.orders[0].category).toBe('鲜花花束');
     expect(result.orders[0].recipe).toEqual([
       { material: '玫瑰', stemsPerBunch: 6, unit: '支', totalStems: 12, note: 'A级' },
     ]);

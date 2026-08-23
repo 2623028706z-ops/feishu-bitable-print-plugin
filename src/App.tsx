@@ -3,7 +3,7 @@ import type { CSSProperties } from 'react';
 import JsBarcode from 'jsbarcode';
 import { AlertTriangle, Barcode, Check, ChevronDown, FileText, LayoutGrid, LoaderCircle, Printer, RefreshCw, Settings2, SlidersHorizontal } from 'lucide-react';
 import { bitable } from '@lark-base-open/js-sdk';
-import { adjustPrintDate, aggregateOrders, defaultLabelConfig, defaultPrintFilter, expandLabelCopies, filterOrders, issueLabel, type LabelConfig, type PrintFilter, type PrintOrder } from './lib/print-model';
+import { adjustPrintDate, aggregateOrders, defaultLabelConfig, defaultPrintFilter, expandLabelCopies, filterOrders, issueLabel, splitCategoryValues, type LabelConfig, type PrintFilter, type PrintOrder } from './lib/print-model';
 import { loadFeishuOrders } from './lib/feishu-adapter';
 
 type Mode = 'label' | 'work-order';
@@ -133,7 +133,7 @@ export default function App() {
   }, [refresh]);
 
   const customers = useMemo(() => [...new Set(orders.map((order) => order.customer).filter(Boolean))].sort(), [orders]);
-  const categories = useMemo(() => [...new Set(orders.flatMap((order) => order.category.split(/[、,，;/]/).map((item) => item.trim()).filter(Boolean)))].sort(), [orders]);
+  const categories = useMemo(() => [...new Set(orders.flatMap((order) => splitCategoryValues(order.category)))].sort(), [orders]);
   const products = useMemo(() => [...new Set(orders.map((order) => order.productName).filter(Boolean))].sort(), [orders]);
   const filteredOrders = useMemo(() => filterOrders(orders, filter), [orders, filter]);
   const labelCopies = useMemo(() => expandLabelCopies(filteredOrders.filter((order) => order.quantity > 0), config, filter.quantityMode === 'custom' ? filter.customQuantity : undefined), [filteredOrders, config, filter.quantityMode, filter.customQuantity]);

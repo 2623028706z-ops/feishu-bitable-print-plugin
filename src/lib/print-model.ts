@@ -185,6 +185,18 @@ function dateKey(value: string): string {
   return match ? `${match[1]}-${match[2].padStart(2, '0')}-${match[3].padStart(2, '0')}` : '';
 }
 
+export function splitCategoryValues(value: string): string[] {
+  return value
+    .normalize('NFKC')
+    .split(/[、,，;/；|｜\n\r\t]+/)
+    .map((item) => item.replace(/\s+/g, ' ').trim())
+    .filter(Boolean);
+}
+
+function selectedCategorySet(values: string[]): Set<string> {
+  return new Set(values.flatMap(splitCategoryValues));
+}
+
 function shiftDate(value: string, days: number): string {
   const match = value.match(/^(\d{4})[\/-](\d{1,2})[\/-](\d{1,2})/);
   const date = match
@@ -202,7 +214,7 @@ export function adjustPrintDate(value: string, days: number): string {
 
 export function filterOrders(orders: PrintOrder[], filter: PrintFilter): PrintOrder[] {
   const customers = new Set(filter.customers);
-  const categories = new Set(filter.categories);
+  const categories = selectedCategorySet(filter.categories);
   const products = new Set(filter.products);
   let targetDate = '';
   if (filter.dateMode === 'exact') targetDate = dateKey(filter.exactDate);
@@ -213,7 +225,7 @@ export function filterOrders(orders: PrintOrder[], filter: PrintFilter): PrintOr
   return orders.filter((order) => {
     if (customers.size && !customers.has(order.customer)) return false;
     if (categories.size) {
-      const orderCategories = order.category.split(/[、,，;/]/).map((item) => item.trim()).filter(Boolean);
+      const orderCategories = splitCategoryValues(order.category);
       if (!orderCategories.some((category) => categories.has(category))) return false;
     }
     if (products.size && !products.has(order.productName)) return false;

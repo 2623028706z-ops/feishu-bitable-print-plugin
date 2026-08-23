@@ -15,7 +15,7 @@ const FIELD_ALIASES = {
   shipDate: ['出货日期'],
   productCode: ['花束编码'],
   customer: ['客户名称', '客户'],
-  category: ['品类', '类别', '花束品类', '品类名称', '商品品类', '花束类别', '分类'],
+  category: ['品类', '类别', '花束品类', '品类名称', '商品品类', '花束类别', '商品分类', '花束分类', '产品分类', '产品品类', '分类'],
   careInstructions: ['养护说明'],
   productName: ['花束名称', '商品名称', '成品名称'],
   quantity: ['销售数量（扎）', '销售数量', '扎数', '数量'],
@@ -28,15 +28,30 @@ const FIELD_ALIASES = {
   recipeNote: ['采购备注', '装箱备注'],
 } as const;
 
-function text(value: unknown): string {
+export function text(value: unknown, depth = 0): string {
+  if (depth > 6) return '';
   if (value === null || value === undefined) return '';
-  if (typeof value === 'string' || typeof value === 'number') return String(value);
-  if (Array.isArray(value)) return value.map(text).filter(Boolean).join('、');
+  if (typeof value === 'string' || typeof value === 'number') return String(value).trim();
+  if (Array.isArray(value)) return value.map((item) => text(item, depth + 1)).filter(Boolean).join('、');
   if (typeof value === 'object') {
     const item = value as Record<string, unknown>;
-    return text(item.text ?? item.name ?? item.value ?? item.displayValue ?? item.id);
+    // Single-select, multi-select, lookup and formula wrappers use different
+    // display keys depending on the host/API version. Prefer the first value
+    // that resolves to visible text; an empty `text` must not hide `value`.
+    for (const key of ['text', 'name', 'label', 'title', 'value', 'option', 'displayValue', 'display_name', 'displayName', 'id']) {
+      const candidate = text(item[key], depth + 1);
+      if (candidate) return candidate;
+    }
   }
   return '';
+}
+
+function normalizedFieldName(value: string): string {
+  return value.normalize('NFKC').replace(/\s+/g, '').trim().toLocaleLowerCase();
+}
+
+function comparableFieldName(value: string): string {
+  return normalizedFieldName(value).replace(/[（(].*?[）)]/g, '');
 }
 
 function number(value: unknown): number {
@@ -50,7 +65,26 @@ function findField(fields: Record<string, unknown>, names: readonly string[], la
     if (fieldId && fieldId in fields) return fields[fieldId];
     if (name in fields) return fields[name];
   }
+  const normalizedLabels = Object.entries(labels);
+  for (const name of names) {
+    const target = normalizedFieldName(name);
+    const match = normalizedLabels.find(([label]) => normalizedFieldName(label) === target);
+    if (match && match[1] in fields) return fields[match[1]];
+  }
+  for (const name of names) {
+    const target = comparableFieldName(name);
+    const match = normalizedLabels.find(([label]) => comparableFieldName(label) === target);
+    if (match && match[1] in fields) return fields[match[1]];
+  }
   return undefined;
+}
+
+function normalizeCategory(value: unknown): string {
+  return text(value)
+    .split(/[、,，;/；|｜\n\r\t]+/)
+    .map((item) => item.normalize('NFKC').replace(/\s+/g, ' ').trim())
+    .filter(Boolean)
+    .join('、');
 }
 
 function normalizeDate(value: unknown): string {
@@ -267,7 +301,7 @@ async function normalizeRecord(
     orderNo: text(findField(fields, FIELD_ALIASES.orderNo, labels)),
     shipDate: normalizeDate(findField(fields, FIELD_ALIASES.shipDate, labels)),
     customer: text(findField(fields, FIELD_ALIASES.customer, labels)),
-    category: text(findField(fields, FIELD_ALIASES.category, labels)),
+    category: normalizeCategory(findField(fields, FIELD_ALIASES.category, labels)),
     careInstructions: text(findField(fields, FIELD_ALIASES.careInstructions, labels)),
     productName: text(findField(fields, FIELD_ALIASES.productName, labels)) || '未命名花束',
     productCode,

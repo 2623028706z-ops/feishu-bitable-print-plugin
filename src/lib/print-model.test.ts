@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { adjustPrintDate, aggregateOrders, applyQuantityFilter, defaultLabelConfig, defaultPrintFilter, expandLabelCopies, filterOrders, sampleOrders } from './print-model';
+import { adjustPrintDate, aggregateOrders, applyQuantityFilter, defaultLabelConfig, defaultPrintFilter, expandLabelCopies, filterOrders, sampleOrders, splitCategoryValues } from './print-model';
 
 describe('print model', () => {
   it('adjusts only the label date with T plus n', () => {
@@ -26,6 +26,13 @@ describe('print model', () => {
     expect(filterOrders(orders, { ...defaultPrintFilter, products: ['另一款花束'] })).toHaveLength(1);
     expect(filterOrders(orders, { ...defaultPrintFilter, dateMode: 'offset', baseDate: '2026-08-23', offsetDays: 2 })).toHaveLength(1);
     expect(filterOrders([{ ...sampleOrders[0], category: '鲜花、礼盒' }], { ...defaultPrintFilter, categories: ['礼盒'] })).toHaveLength(1);
+    expect(filterOrders([{ ...sampleOrders[0], category: '鲜花；\n礼盒' }], { ...defaultPrintFilter, categories: ['礼盒'] })).toHaveLength(1);
+    expect(filterOrders([{ ...sampleOrders[0], category: ' 鲜花花束 ' }], { ...defaultPrintFilter, categories: ['鲜花花束'] })).toHaveLength(1);
+  });
+
+  it('normalizes common category separators and full-width characters', () => {
+    expect(splitCategoryValues('鲜花； 礼盒|永生花\n干花')).toEqual(['鲜花', '礼盒', '永生花', '干花']);
+    expect(splitCategoryValues('　鲜花花束　')).toEqual(['鲜花花束']);
   });
 
   it('applies a custom label quantity without mutating source orders', () => {
