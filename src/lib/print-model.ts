@@ -212,7 +212,10 @@ export function filterOrders(orders: PrintOrder[], filter: PrintFilter): PrintOr
 
   return orders.filter((order) => {
     if (customers.size && !customers.has(order.customer)) return false;
-    if (categories.size && !categories.has(order.category)) return false;
+    if (categories.size) {
+      const orderCategories = order.category.split(/[、,，;/]/).map((item) => item.trim()).filter(Boolean);
+      if (!orderCategories.some((category) => categories.has(category))) return false;
+    }
     if (products.size && !products.has(order.productName)) return false;
     const orderDate = dateKey(order.shipDate);
     if (filter.dateMode === 'exact' || filter.dateMode === 'offset') return Boolean(targetDate && orderDate === targetDate);

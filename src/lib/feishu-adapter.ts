@@ -15,7 +15,7 @@ const FIELD_ALIASES = {
   shipDate: ['出货日期'],
   productCode: ['花束编码'],
   customer: ['客户名称', '客户'],
-  category: ['品类', '类别', '花束品类'],
+  category: ['品类', '类别', '花束品类', '品类名称', '商品品类', '花束类别', '分类'],
   careInstructions: ['养护说明'],
   productName: ['花束名称', '商品名称', '成品名称'],
   quantity: ['销售数量（扎）', '销售数量', '扎数', '数量'],

@@ -43,7 +43,7 @@ function LabelSheet({ orders, config }: { orders: PrintOrder[]; config: LabelCon
   const sheetHeight = config.marginY * 2 + config.rows * config.height + (config.rows - 1) * config.gapY;
   const style = { '--label-width': `${config.width}mm`, '--label-height': `${config.height}mm`, '--sheet-width': `${sheetWidth}mm`, '--sheet-height': `${sheetHeight}mm`, '--gap-x': `${config.gapX}mm`, '--gap-y': `${config.gapY}mm`, '--margin-x': `${config.marginX}mm`, '--margin-y': `${config.marginY}mm`, '--label-columns': config.columns, '--label-rows': config.rows, '--label-font-family': config.fontFamily, '--label-font-size': `${config.fontSize}mm`, '--label-code-size': `${Math.max(1.4, config.fontSize * 0.68)}mm`, '--label-meta-size': `${Math.max(1.2, config.fontSize * 0.58)}mm`, '--label-customer-size': `${Math.max(1.1, config.fontSize * 0.54)}mm`, '--label-care-size': `${Math.max(1, config.fontSize * 0.5)}mm`, '--label-font-weight': config.fontWeight, '--label-align': config.textAlign, '--label-padding': `${config.padding}mm`, '--label-content-gap': `${config.contentGap}mm`, '--label-line-height': config.lineHeight } as CSSProperties;
   const pageCount = Math.max(1, Math.ceil(labels.length / pageSize));
-  return <>{Array.from({ length: pageCount }, (_, pageIndex) => <div className={`print-surface label-sheet${pageIndex < pageCount - 1 ? ' label-page-break' : ''}`} style={style} key={`label-page-${pageIndex}`}>
+  return <><style>{`@page label-sheet-page { size: ${sheetWidth}mm ${sheetHeight}mm; margin: 0; }`}</style>{Array.from({ length: pageCount }, (_, pageIndex) => <div className={`print-surface label-sheet${pageIndex < pageCount - 1 ? ' label-page-break' : ''}`} style={style} key={`label-page-${pageIndex}`}>
     {labels.slice(pageIndex * pageSize, (pageIndex + 1) * pageSize).map((order) => <div className="label-card" key={order.recordId}>
       {config.showName && <div className="label-name">{order.productName}</div>}
       {config.showCode && order.productCode ? <><BarcodeView value={order.productCode} /><div className="label-code">{order.productCode}</div></> : <div className="label-missing">未设置花束编码</div>}
@@ -133,7 +133,7 @@ export default function App() {
   }, [refresh]);
 
   const customers = useMemo(() => [...new Set(orders.map((order) => order.customer).filter(Boolean))].sort(), [orders]);
-  const categories = useMemo(() => [...new Set(orders.map((order) => order.category).filter(Boolean))].sort(), [orders]);
+  const categories = useMemo(() => [...new Set(orders.flatMap((order) => order.category.split(/[、,，;/]/).map((item) => item.trim()).filter(Boolean)))].sort(), [orders]);
   const products = useMemo(() => [...new Set(orders.map((order) => order.productName).filter(Boolean))].sort(), [orders]);
   const filteredOrders = useMemo(() => filterOrders(orders, filter), [orders, filter]);
   const labelCopies = useMemo(() => expandLabelCopies(filteredOrders.filter((order) => order.quantity > 0), config, filter.quantityMode === 'custom' ? filter.customQuantity : undefined), [filteredOrders, config, filter.quantityMode, filter.customQuantity]);
@@ -147,7 +147,7 @@ export default function App() {
   }, [filteredOrders]);
   const resetFilter = useCallback(() => setFilter({ ...defaultPrintFilter, dateMode: 'exact', exactDate: todayInput(), baseDate: todayInput() }), []);
 
-  return <div className="app-shell">
+  return <div className={`app-shell ${mode}`}>
     <aside className="control-panel">
       <div className="brand"><div className="brand-mark">H</div><div><strong>花众打印</strong><span>Sales order studio</span></div></div>
       <div className="source-strip"><span className="source-dot" /><div><b>{tableName}</b><small>{source}</small></div><button className="icon-button" onClick={refresh} aria-label="刷新数据" title="刷新数据">{loading ? <LoaderCircle className="spin" size={16} /> : <RefreshCw size={16} />}</button></div>

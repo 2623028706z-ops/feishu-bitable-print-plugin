@@ -25,6 +25,7 @@ describe('print model', () => {
     expect(filterOrders(orders, { ...defaultPrintFilter, categories: ['鲜花花束'] })).toHaveLength(3);
     expect(filterOrders(orders, { ...defaultPrintFilter, products: ['另一款花束'] })).toHaveLength(1);
     expect(filterOrders(orders, { ...defaultPrintFilter, dateMode: 'offset', baseDate: '2026-08-23', offsetDays: 2 })).toHaveLength(1);
+    expect(filterOrders([{ ...sampleOrders[0], category: '鲜花、礼盒' }], { ...defaultPrintFilter, categories: ['礼盒'] })).toHaveLength(1);
   });
 
   it('applies a custom label quantity without mutating source orders', () => {
