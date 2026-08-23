@@ -76,6 +76,19 @@ function findField(fields: Record<string, unknown>, names: readonly string[], la
     const match = normalizedLabels.find(([label]) => comparableFieldName(label) === target);
     if (match && match[1] in fields) return fields[match[1]];
   }
+  // Bases often append a type marker to business fields, for example
+  // "品类（查找）" or "商品品类字段". If the exact/parenthesis-insensitive
+  // match above misses, accept a unique contains match for the semantic
+  // aliases so the field remains usable across renamed columns.
+  for (const name of names) {
+    const target = comparableFieldName(name);
+    if (target.length < 2) continue;
+    const matches = normalizedLabels.filter(([label, id]) => {
+      const comparable = comparableFieldName(label);
+      return id in fields && (comparable.includes(target) || target.includes(comparable));
+    });
+    if (matches.length === 1) return fields[matches[0][1]];
+  }
   return undefined;
 }
 

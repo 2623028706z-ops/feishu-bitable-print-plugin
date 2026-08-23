@@ -39,11 +39,10 @@ function IssueSummary({ orders }: { orders: PrintOrder[] }) {
 function LabelSheet({ orders, config }: { orders: PrintOrder[]; config: LabelConfig }) {
   const labels = expandLabelCopies(orders.filter((order) => order.quantity > 0), config);
   const pageSize = Math.max(1, config.rows * config.columns);
-  const sheetWidth = config.marginX * 2 + config.columns * config.width + (config.columns - 1) * config.gapX;
-  const sheetHeight = config.marginY * 2 + config.rows * config.height + (config.rows - 1) * config.gapY;
+  const { sheetWidth, sheetHeight } = labelSheetMetrics(config);
   const style = { '--label-width': `${config.width}mm`, '--label-height': `${config.height}mm`, '--sheet-width': `${sheetWidth}mm`, '--sheet-height': `${sheetHeight}mm`, '--gap-x': `${config.gapX}mm`, '--gap-y': `${config.gapY}mm`, '--margin-x': `${config.marginX}mm`, '--margin-y': `${config.marginY}mm`, '--label-columns': config.columns, '--label-rows': config.rows, '--label-font-family': config.fontFamily, '--label-font-size': `${config.fontSize}mm`, '--label-code-size': `${Math.max(1.4, config.fontSize * 0.68)}mm`, '--label-meta-size': `${Math.max(1.2, config.fontSize * 0.58)}mm`, '--label-customer-size': `${Math.max(1.1, config.fontSize * 0.54)}mm`, '--label-care-size': `${Math.max(1, config.fontSize * 0.5)}mm`, '--label-font-weight': config.fontWeight, '--label-align': config.textAlign, '--label-padding': `${config.padding}mm`, '--label-content-gap': `${config.contentGap}mm`, '--label-line-height': config.lineHeight } as CSSProperties;
   const pageCount = Math.max(1, Math.ceil(labels.length / pageSize));
-  return <><style>{`@page label-sheet-page { size: ${sheetWidth}mm ${sheetHeight}mm; margin: 0; }`}</style>{Array.from({ length: pageCount }, (_, pageIndex) => <div className={`print-surface label-sheet${pageIndex < pageCount - 1 ? ' label-page-break' : ''}`} style={style} key={`label-page-${pageIndex}`}>
+  return <>{Array.from({ length: pageCount }, (_, pageIndex) => <div className={`print-surface label-sheet${pageIndex < pageCount - 1 ? ' label-page-break' : ''}`} style={style} key={`label-page-${pageIndex}`}>
     {labels.slice(pageIndex * pageSize, (pageIndex + 1) * pageSize).map((order) => <div className="label-card" key={order.recordId}>
       {config.showName && <div className="label-name">{order.productName}</div>}
       {config.showCode && order.productCode ? <><BarcodeView value={order.productCode} /><div className="label-code">{order.productCode}</div></> : <div className="label-missing">未设置花束编码</div>}
@@ -94,6 +93,12 @@ function todayInput() {
   return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
 }
 
+function labelSheetMetrics(config: LabelConfig) {
+  const sheetWidth = config.marginX * 2 + config.columns * config.width + (config.columns - 1) * config.gapX;
+  const sheetHeight = config.marginY * 2 + config.rows * config.height + (config.rows - 1) * config.gapY;
+  return { sheetWidth, sheetHeight };
+}
+
 export default function App() {
   const [mode, setMode] = useState<Mode>(() => localStorage.getItem(MODE_STORAGE_KEY) === 'work-order' ? 'work-order' : 'label');
   const [orders, setOrders] = useState<PrintOrder[]>([]);
@@ -131,6 +136,24 @@ export default function App() {
     refresh();
     return bitable.base.onSelectionChange(() => { refresh(); });
   }, [refresh]);
+
+  useEffect(() => {
+    const styleId = 'label-sheet-page-style';
+    const metrics = labelSheetMetrics(config);
+    const rule = `@page label-sheet-page { size: ${metrics.sheetWidth}mm ${metrics.sheetHeight}mm; margin: 0; }`;
+    if (mode !== 'label') {
+      document.getElementById(styleId)?.remove();
+      return;
+    }
+    const existing = document.getElementById(styleId) as HTMLStyleElement | null;
+    const style = existing ?? document.createElement('style');
+    style.id = styleId;
+    style.textContent = rule;
+    if (!existing) document.head.appendChild(style);
+    return () => {
+      if (style.isConnected) style.remove();
+    };
+  }, [mode, config.width, config.height, config.columns, config.rows, config.gapX, config.gapY, config.marginX, config.marginY]);
 
   const customers = useMemo(() => [...new Set(orders.map((order) => order.customer).filter(Boolean))].sort(), [orders]);
   const categories = useMemo(() => [...new Set(orders.flatMap((order) => splitCategoryValues(order.category)))].sort(), [orders]);

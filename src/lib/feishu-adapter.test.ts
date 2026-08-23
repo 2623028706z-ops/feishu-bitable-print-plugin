@@ -154,6 +154,45 @@ describe('feishu link value parsing', () => {
     expect(result.orders[0].issues).not.toContain('missing-recipe');
   });
 
+  it('keeps category values when the column has a business suffix and lookup wrapping', async () => {
+    const salesTable = {
+      id: 'tbl_sales_category_suffix',
+      getName: vi.fn().mockResolvedValue('花众销售订单汇总表'),
+      getFieldMetaList: vi.fn().mockResolvedValue([
+        { id: 'fld_product', name: '花束名称' },
+        { id: 'fld_quantity', name: '销售数量' },
+        { id: 'fld_category', name: '商品品类字段' },
+      ]),
+      getViewById: vi.fn().mockResolvedValue({
+        getSelectedRecordIdList: vi.fn().mockResolvedValue([]),
+        getName: vi.fn().mockResolvedValue('今日出货'),
+      }),
+      getRecordsByPage: vi.fn().mockResolvedValue({
+        records: [{
+          recordId: 'rec_category_suffix',
+          fields: {
+            fld_product: '云间甜梦',
+            fld_quantity: 1,
+            fld_category: { value: [{ text: '鲜花花束' }, { name: '礼盒' }] },
+          },
+        }],
+      }),
+    };
+
+    vi.mocked(base.getActiveTable).mockResolvedValue(salesTable as never);
+    vi.mocked(base.getSelection).mockResolvedValue({
+      tableId: 'tbl_other',
+      viewId: 'view_today',
+      recordId: null,
+      fieldId: null,
+      baseId: 'base',
+    });
+
+    const result = await loadFeishuOrders();
+
+    expect(result.orders[0].category).toBe('鲜花花束、礼盒');
+  });
+
   it('prefers a direct sales-order recipe link when present', async () => {
     const directSalesTable = {
       id: 'tbl_sales_direct',
