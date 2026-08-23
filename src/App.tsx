@@ -3,10 +3,22 @@ import type { CSSProperties } from 'react';
 import JsBarcode from 'jsbarcode';
 import { AlertTriangle, Barcode, Check, ChevronDown, FileText, LayoutGrid, LoaderCircle, Printer, RefreshCw, Settings2, SlidersHorizontal } from 'lucide-react';
 import { bitable } from '@lark-base-open/js-sdk';
-import { aggregateOrders, defaultLabelConfig, defaultPrintFilter, expandLabelCopies, filterOrders, issueLabel, sampleOrders, type LabelConfig, type PrintFilter, type PrintOrder } from './lib/print-model';
+import { aggregateOrders, defaultLabelConfig, defaultPrintFilter, expandLabelCopies, filterOrders, issueLabel, type LabelConfig, type PrintFilter, type PrintOrder } from './lib/print-model';
 import { loadFeishuOrders } from './lib/feishu-adapter';
 
 type Mode = 'label' | 'work-order';
+const MODE_STORAGE_KEY = 'huazhong-print-mode';
+const FILTER_STORAGE_KEY = 'huazhong-print-filter';
+const CONFIG_STORAGE_KEY = 'huazhong-label-config';
+
+function readMemory<T>(key: string, fallback: T): T {
+  try {
+    const value = localStorage.getItem(key);
+    return value ? { ...fallback as object, ...JSON.parse(value) } as T : fallback;
+  } catch {
+    return fallback;
+  }
+}
 
 function BarcodeView({ value }: { value: string }) {
   const ref = useRef<SVGSVGElement>(null);
@@ -18,6 +30,7 @@ function BarcodeView({ value }: { value: string }) {
 }
 
 function IssueSummary({ orders }: { orders: PrintOrder[] }) {
+  if (!orders.length) return <div className="empty-status"><span>0</span> 当前筛选没有可打印订单</div>;
   const issues = orders.flatMap((order) => order.issues.map((issue) => `${order.productName}：${issueLabel(issue)}`));
   if (!issues.length) return <div className="clean-status"><Check size={15} /> 数据完整，可生成打印预览</div>;
   return <div className="issue-box"><AlertTriangle size={16} /><div><strong>{issues.length} 项数据需要确认</strong><div>{issues.slice(0, 3).join('；')}{issues.length > 3 ? '…' : ''}</div></div></div>;
@@ -25,25 +38,28 @@ function IssueSummary({ orders }: { orders: PrintOrder[] }) {
 
 function LabelSheet({ orders, config }: { orders: PrintOrder[]; config: LabelConfig }) {
   const labels = expandLabelCopies(orders.filter((order) => order.quantity > 0), config);
-  return <div className="print-surface label-sheet" style={{ '--label-width': `${config.width}mm`, '--label-height': `${config.height}mm`, '--gap-x': `${config.gapX}mm`, '--gap-y': `${config.gapY}mm`, '--margin-x': `${config.marginX}mm`, '--margin-y': `${config.marginY}mm`, '--label-columns': config.columns } as CSSProperties}>
-    {labels.map((order) => <div className="label-card" key={order.recordId}>
+  const pageSize = Math.max(1, config.rows * config.columns);
+  const sheetWidth = config.marginX * 2 + config.columns * config.width + (config.columns - 1) * config.gapX;
+  const sheetHeight = config.marginY * 2 + config.rows * config.height + (config.rows - 1) * config.gapY;
+  const style = { '--label-width': `${config.width}mm`, '--label-height': `${config.height}mm`, '--sheet-width': `${sheetWidth}mm`, '--sheet-height': `${sheetHeight}mm`, '--gap-x': `${config.gapX}mm`, '--gap-y': `${config.gapY}mm`, '--margin-x': `${config.marginX}mm`, '--margin-y': `${config.marginY}mm`, '--label-columns': config.columns, '--label-rows': config.rows, '--label-font-family': config.fontFamily, '--label-font-size': `${config.fontSize}mm`, '--label-code-size': `${Math.max(1.4, config.fontSize * 0.68)}mm`, '--label-meta-size': `${Math.max(1.2, config.fontSize * 0.58)}mm`, '--label-customer-size': `${Math.max(1.1, config.fontSize * 0.54)}mm`, '--label-care-size': `${Math.max(1, config.fontSize * 0.5)}mm`, '--label-font-weight': config.fontWeight, '--label-align': config.textAlign, '--label-padding': `${config.padding}mm`, '--label-content-gap': `${config.contentGap}mm`, '--label-line-height': config.lineHeight } as CSSProperties;
+  return <>{Array.from({ length: Math.max(1, Math.ceil(labels.length / pageSize)) }, (_, pageIndex) => <div className="print-surface label-sheet" style={style} key={`label-page-${pageIndex}`}>
+    {labels.slice(pageIndex * pageSize, (pageIndex + 1) * pageSize).map((order) => <div className="label-card" key={order.recordId}>
       {config.showName && <div className="label-name">{order.productName}</div>}
       {config.showCode && order.productCode ? <><BarcodeView value={order.productCode} /><div className="label-code">{order.productCode}</div></> : <div className="label-missing">未设置花束编码</div>}
-      <div className="label-meta">
-        {config.showQuantity && <span>{order.quantity} 扎</span>}
-        {config.showDate && <span>{order.shipDate || '未填写日期'}</span>}
-      </div>
+      {config.showDate && <div className="label-meta"><span>{order.shipDate || '未填写日期'}</span></div>}
       {config.showCustomer && <div className="label-customer">{order.customer || '未填写客户'}</div>}
       {config.showCareInstructions && order.careInstructions && <div className="label-care">{order.careInstructions}</div>}
     </div>)}
-  </div>;
+  </div>)}</>;
 }
 
-function WorkOrder({ orders }: { orders: PrintOrder[] }) {
+function WorkOrder({ orders, shipDateLabel }: { orders: PrintOrder[]; shipDateLabel: string }) {
   const grouped = aggregateOrders(orders.filter((order) => order.quantity > 0));
   const totalQuantity = grouped.reduce((sum, order) => sum + order.quantity, 0);
+  const customers = [...new Set(orders.map((order) => order.customer.trim()).filter(Boolean))].sort();
+  const customerLabel = customers.length === 0 ? '未填写客户' : customers.length === 1 ? customers[0] : `多个客户（${customers.length}）`;
   return <div className="print-surface work-order">
-    <header className="work-head"><div><div className="work-kicker">花众生产打印</div><h1>天虹花束加工单</h1><p>A4 横向 · 由销售订单实时展开成品配方</p></div><div className="work-stats"><strong>{totalQuantity} 扎</strong><span>{grouped.length} 款 · {orders.length} 单</span></div></header>
+    <header className="work-head"><div><div className="work-kicker">花众生产打印</div><h1>花束加工单</h1><p>A4 横向 · 客户：<b>{customerLabel}</b> · 出货日期：<b>{shipDateLabel}</b></p></div><div className="work-stats"><strong>{totalQuantity} 扎</strong><span>{grouped.length} 款 · {orders.length} 单</span></div></header>
     <table><thead><tr><th>花束</th><th>花材</th><th>加工扎数</th><th>单束</th><th>总支数</th><th>备注</th></tr></thead><tbody>
       {grouped.flatMap((order, index) => order.recipe.length ? order.recipe.map((line, lineIndex) => (
         <tr key={`${order.recordId}-${line.material}`}>
@@ -78,22 +94,23 @@ function todayInput() {
 }
 
 export default function App() {
-  const [mode, setMode] = useState<Mode>('label');
-  const [orders, setOrders] = useState<PrintOrder[]>(sampleOrders);
-  const [source, setSource] = useState('示例预览');
+  const [mode, setMode] = useState<Mode>(() => localStorage.getItem(MODE_STORAGE_KEY) === 'work-order' ? 'work-order' : 'label');
+  const [orders, setOrders] = useState<PrintOrder[]>([]);
+  const [source, setSource] = useState('等待读取飞书');
   const [tableName, setTableName] = useState('销售订单表');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
-  const [filter, setFilter] = useState<PrintFilter>(() => ({ ...defaultPrintFilter, baseDate: todayInput() }));
-  const [config, setConfig] = useState<LabelConfig>(() => {
-    try { return { ...defaultLabelConfig, ...JSON.parse(localStorage.getItem('huazhong-label-config') || '{}') }; } catch { return defaultLabelConfig; }
-  });
+  const [filter, setFilter] = useState<PrintFilter>(() => readMemory(FILTER_STORAGE_KEY, { ...defaultPrintFilter, dateMode: 'exact', exactDate: todayInput(), baseDate: todayInput() }));
+  const [config, setConfig] = useState<LabelConfig>(() => readMemory(CONFIG_STORAGE_KEY, defaultLabelConfig));
 
   const updateConfig = useCallback((patch: Partial<LabelConfig>) => setConfig((current) => {
     const next = { ...current, ...patch };
-    localStorage.setItem('huazhong-label-config', JSON.stringify(next));
+    localStorage.setItem(CONFIG_STORAGE_KEY, JSON.stringify(next));
     return next;
   }), []);
+
+  useEffect(() => { localStorage.setItem(MODE_STORAGE_KEY, mode); }, [mode]);
+  useEffect(() => { localStorage.setItem(FILTER_STORAGE_KEY, JSON.stringify(filter)); }, [filter]);
 
   const refresh = useCallback(async () => {
     setLoading(true); setError('');
@@ -103,8 +120,9 @@ export default function App() {
       setSource(result.orders.length ? result.source : '当前视图为空');
       setTableName(result.tableName);
     } catch (cause) {
+      setOrders([]);
       setError(cause instanceof Error ? cause.message : '无法读取飞书当前表');
-      setSource('脱离飞书 · 示例预览');
+      setSource('未连接飞书');
     } finally { setLoading(false); }
   }, []);
 
@@ -119,20 +137,25 @@ export default function App() {
   const filteredOrders = useMemo(() => filterOrders(orders, filter), [orders, filter]);
   const labelCopies = useMemo(() => expandLabelCopies(filteredOrders.filter((order) => order.quantity > 0), config, filter.quantityMode === 'custom' ? filter.customQuantity : undefined), [filteredOrders, config, filter.quantityMode, filter.customQuantity]);
   const activeCount = mode === 'label' ? labelCopies.length : aggregateOrders(filteredOrders.filter((order) => order.quantity > 0)).length;
-  const title = mode === 'label' ? '标签与条码' : '天虹加工单';
+  const title = mode === 'label' ? '标签与条码' : '花束加工单';
   const updateFilter = useCallback((patch: Partial<PrintFilter>) => setFilter((current) => ({ ...current, ...patch })), []);
   const dateModeLabel = { all: '全部日期', exact: '指定日期', range: '日期范围', offset: 'T+n' }[filter.dateMode];
+  const shipDateLabel = useMemo(() => {
+    const dates = [...new Set(filteredOrders.map((order) => order.shipDate).filter(Boolean))].sort();
+    return dates.length === 0 ? '未填写出货日期' : dates.length === 1 ? dates[0] : `多个出货日期（${dates.length} 天）`;
+  }, [filteredOrders]);
+  const resetFilter = useCallback(() => setFilter({ ...defaultPrintFilter, dateMode: 'exact', exactDate: todayInput(), baseDate: todayInput() }), []);
 
   return <div className="app-shell">
     <aside className="control-panel">
       <div className="brand"><div className="brand-mark">H</div><div><strong>花众打印</strong><span>Sales order studio</span></div></div>
       <div className="source-strip"><span className="source-dot" /><div><b>{tableName}</b><small>{source}</small></div><button className="icon-button" onClick={refresh} aria-label="刷新数据" title="刷新数据">{loading ? <LoaderCircle className="spin" size={16} /> : <RefreshCw size={16} />}</button></div>
       <div className="mode-switch" role="tablist"><button className={mode === 'label' ? 'active' : ''} onClick={() => setMode('label')} role="tab"><Barcode size={16} />标签</button><button className={mode === 'work-order' ? 'active' : ''} onClick={() => setMode('work-order')} role="tab"><FileText size={16} />加工单</button></div>
-      <div className="panel-section"><div className="section-title"><span>打印范围</span><span className="count-pill">{filteredOrders.length}/{orders.length} 条</span></div><div className="range-row"><span className="selection-indicator" />当前视图记录</div><p className="helper">在表格里选中单条记录时，会优先预览该记录。</p><OptionList label="客户（可多选）" options={customers} selected={filter.customers} onChange={(customers) => updateFilter({ customers })} /><OptionList label="品类（可多选）" options={categories} selected={filter.categories} onChange={(categories) => updateFilter({ categories })} /><OptionList label="花束（可多选）" options={products} selected={filter.products} onChange={(products) => updateFilter({ products })} /><div className="filter-field"><div className="filter-label"><span>出货日期</span><b>{dateModeLabel}</b></div><select className="select-field" value={filter.dateMode} onChange={(event) => updateFilter({ dateMode: event.target.value as PrintFilter['dateMode'] })}><option value="all">全部日期</option><option value="exact">指定日期</option><option value="range">日期范围</option><option value="offset">T+n</option></select>{filter.dateMode === 'exact' && <input className="date-field" type="date" value={filter.exactDate} onChange={(event) => updateFilter({ exactDate: event.target.value })} />}{filter.dateMode === 'range' && <div className="date-pair"><input className="date-field" type="date" value={filter.startDate} onChange={(event) => updateFilter({ startDate: event.target.value })} /><input className="date-field" type="date" value={filter.endDate} onChange={(event) => updateFilter({ endDate: event.target.value })} /></div>}{filter.dateMode === 'offset' && <div className="date-pair"><label className="date-label">T<input className="date-field" type="date" value={filter.baseDate} onChange={(event) => updateFilter({ baseDate: event.target.value })} /></label><label className="date-label">偏移天数<input className="date-field" type="number" min="0" value={filter.offsetDays} onChange={(event) => updateFilter({ offsetDays: Number(event.target.value) || 0 })} /></label></div>}</div><div className="filter-field"><div className="filter-label"><span>标签数量</span><b>{filter.quantityMode === 'order' ? '按订单数量' : `每单 ${filter.customQuantity} 张`}</b></div><div className="quantity-switch"><button type="button" className={filter.quantityMode === 'order' ? 'active' : ''} onClick={() => updateFilter({ quantityMode: 'order' })}>订单数量</button><button type="button" className={filter.quantityMode === 'custom' ? 'active' : ''} onClick={() => updateFilter({ quantityMode: 'custom' })}>自定义</button></div>{filter.quantityMode === 'custom' && <NumberField label="每单打印张数" value={filter.customQuantity} onChange={(customQuantity) => updateFilter({ customQuantity: Math.max(0, customQuantity) })} />}</div></div>
-      {mode === 'label' ? <div className="panel-section"><div className="section-title"><span>标签规格</span><Settings2 size={15} /></div><div className="field-grid"><NumberField label="宽 mm" value={config.width} onChange={(value) => updateConfig({ width: value })} /><NumberField label="高 mm" value={config.height} onChange={(value) => updateConfig({ height: value })} /><NumberField label="列数" value={config.columns} onChange={(value) => updateConfig({ columns: Math.max(1, value) })} /><NumberField label="行数" value={config.rows} onChange={(value) => updateConfig({ rows: Math.max(1, value) })} /></div><div className="field-grid"><NumberField label="横间距" value={config.gapX} onChange={(value) => updateConfig({ gapX: value })} /><NumberField label="纵间距" value={config.gapY} onChange={(value) => updateConfig({ gapY: value })} /></div></div> : <div className="panel-section"><div className="section-title"><span>加工单结构</span><LayoutGrid size={15} /></div><div className="info-row"><span>纸张</span><b>A4 横向</b></div><div className="info-row"><span>聚合</span><b>按花束合并</b></div><div className="info-row"><span>配方来源</span><b>成品配方表</b></div></div>}
-      {mode === 'label' && <div className="panel-section"><div className="section-title"><span>标签内容</span><SlidersHorizontal size={15} /></div>{[['showName', '花束名称'], ['showCode', '条码与编码'], ['showQuantity', '销售数量'], ['showDate', '出货日期'], ['showCustomer', '客户名称'], ['showCareInstructions', '养护说明']].map(([key, label]) => <label className="toggle-row" key={key}><span>{label}</span><input type="checkbox" checked={Boolean(config[key as keyof LabelConfig])} onChange={(event) => updateConfig({ [key]: event.target.checked })} /><i /></label>)}<label className="toggle-row"><span>按销售数量打印</span><input type="checkbox" checked={config.copiesByQuantity} onChange={(event) => updateConfig({ copiesByQuantity: event.target.checked })} /><i /></label></div>}
+      <div className="panel-section filter-section"><div className="section-title"><span>日期与订单筛选</span><button type="button" className="reset-filter" onClick={resetFilter}>重置</button><span className="count-pill">{filteredOrders.length}/{orders.length} 条</span></div><div className="range-row"><span className="selection-indicator" />当前视图记录 <small>{dateModeLabel}</small></div><p className="helper">默认只看今天出货的订单；选择 T+n 可切换生产日。</p><OptionList label="客户（可多选）" options={customers} selected={filter.customers} onChange={(customers) => updateFilter({ customers })} /><OptionList label="品类（可多选）" options={categories} selected={filter.categories} onChange={(categories) => updateFilter({ categories })} /><OptionList label="花束（可多选）" options={products} selected={filter.products} onChange={(products) => updateFilter({ products })} /><div className="filter-field"><div className="filter-label"><span>出货日期</span><b>{dateModeLabel}</b></div><select className="select-field" value={filter.dateMode} onChange={(event) => updateFilter({ dateMode: event.target.value as PrintFilter['dateMode'] })}><option value="exact">指定日期</option><option value="offset">T+n</option><option value="range">日期范围</option><option value="all">全部日期</option></select>{filter.dateMode === 'exact' && <input className="date-field" type="date" value={filter.exactDate} onChange={(event) => updateFilter({ exactDate: event.target.value })} />}{filter.dateMode === 'range' && <div className="date-pair"><input className="date-field" type="date" value={filter.startDate} onChange={(event) => updateFilter({ startDate: event.target.value })} /><input className="date-field" type="date" value={filter.endDate} onChange={(event) => updateFilter({ endDate: event.target.value })} /></div>}{filter.dateMode === 'offset' && <div className="date-pair"><label className="date-label">T<input className="date-field" type="date" value={filter.baseDate} onChange={(event) => updateFilter({ baseDate: event.target.value })} /></label><label className="date-label">偏移天数<input className="date-field" type="number" min="0" value={filter.offsetDays} onChange={(event) => updateFilter({ offsetDays: Number(event.target.value) || 0 })} /></label></div>}</div><div className="filter-field"><div className="filter-label"><span>标签数量</span><b>{filter.quantityMode === 'order' ? '按订单数量' : `每单 ${filter.customQuantity} 张`}</b></div><div className="quantity-switch"><button type="button" className={filter.quantityMode === 'order' ? 'active' : ''} onClick={() => updateFilter({ quantityMode: 'order' })}>订单数量</button><button type="button" className={filter.quantityMode === 'custom' ? 'active' : ''} onClick={() => updateFilter({ quantityMode: 'custom' })}>自定义</button></div>{filter.quantityMode === 'custom' && <NumberField label="每单打印张数" value={filter.customQuantity} onChange={(customQuantity) => updateFilter({ customQuantity: Math.max(0, customQuantity) })} />}</div></div>
+      {mode === 'label' ? <div className="panel-section"><div className="section-title"><span>标签规格</span><Settings2 size={15} /></div><div className="field-grid"><NumberField label="宽 mm" value={config.width} onChange={(value) => updateConfig({ width: value })} /><NumberField label="高 mm" value={config.height} onChange={(value) => updateConfig({ height: value })} /><NumberField label="列数" value={config.columns} onChange={(value) => updateConfig({ columns: Math.max(1, value) })} /><NumberField label="行数" value={config.rows} onChange={(value) => updateConfig({ rows: Math.max(1, value) })} /></div><div className="field-grid"><NumberField label="横间距" value={config.gapX} onChange={(value) => updateConfig({ gapX: value })} /><NumberField label="纵间距" value={config.gapY} onChange={(value) => updateConfig({ gapY: value })} /></div><div className="field-grid"><NumberField label="内边距 mm" value={config.padding} onChange={(value) => updateConfig({ padding: Math.max(0, value) })} /><NumberField label="内容间距 mm" value={config.contentGap} onChange={(value) => updateConfig({ contentGap: Math.max(0, value) })} /></div></div> : <div className="panel-section"><div className="section-title"><span>加工单结构</span><LayoutGrid size={15} /></div><div className="info-row"><span>纸张</span><b>A4 横向</b></div><div className="info-row"><span>聚合</span><b>按花束合并</b></div><div className="info-row"><span>配方来源</span><b>成品配方表</b></div></div>}
+      {mode === 'label' && <div className="panel-section"><div className="section-title"><span>标签排版</span><SlidersHorizontal size={15} /></div><div className="filter-field"><div className="filter-label"><span>打印字体</span><b>默认微软雅黑</b></div><select className="select-field" value={config.fontFamily} onChange={(event) => updateConfig({ fontFamily: event.target.value })}><option value="Microsoft YaHei, 微软雅黑, sans-serif">微软雅黑</option><option value="SimSun, 宋体, serif">宋体</option><option value="Arial, sans-serif">Arial</option><option value="sans-serif">系统无衬线</option></select></div><div className="field-grid"><NumberField label="字号 mm" value={config.fontSize} onChange={(value) => updateConfig({ fontSize: Math.max(1, value) })} /><label className="number-field"><span>粗细</span><select className="select-field" value={config.fontWeight} onChange={(event) => updateConfig({ fontWeight: Number(event.target.value) })}><option value="400">常规</option><option value="500">中等</option><option value="600">半粗</option><option value="700">粗体</option></select></label></div><div className="field-grid"><label className="number-field"><span>对齐</span><select className="select-field" value={config.textAlign} onChange={(event) => updateConfig({ textAlign: event.target.value as LabelConfig['textAlign'] })}><option value="left">左对齐</option><option value="center">居中</option><option value="right">右对齐</option></select></label><label className="number-field"><span>行高</span><select className="select-field" value={config.lineHeight} onChange={(event) => updateConfig({ lineHeight: Number(event.target.value) })}><option value="1">紧凑</option><option value="1.2">标准</option><option value="1.4">宽松</option></select></label></div>{[['showName', '花束名称'], ['showCode', '条码与编码'], ['showDate', '出货日期'], ['showCustomer', '客户名称'], ['showCareInstructions', '养护说明']].map(([key, label]) => <label className="toggle-row" key={key}><span>{label}</span><input type="checkbox" checked={Boolean(config[key as keyof LabelConfig])} onChange={(event) => updateConfig({ [key]: event.target.checked })} /><i /></label>)}<label className="toggle-row"><span>按销售数量打印</span><input type="checkbox" checked={config.copiesByQuantity} onChange={(event) => updateConfig({ copiesByQuantity: event.target.checked })} /><i /></label></div>}
       <div className="panel-footer"><IssueSummary orders={filteredOrders} />{error && <div className="error-text">{error}</div>}<button className="primary-button" disabled={!activeCount} onClick={() => window.print()}><Printer size={17} />打印 {activeCount} {mode === 'label' ? '张标签' : '款加工单'}</button><button className="secondary-button" onClick={() => setMode(mode === 'label' ? 'work-order' : 'label')}><ChevronDown size={16} />切换到{mode === 'label' ? '加工单' : '标签'}</button></div>
     </aside>
-    <main className="workspace"><div className="workspace-head"><div><div className="eyebrow">PRINT PREVIEW</div><h1>{title}</h1><p>{mode === 'label' ? '将销售订单转成可直接扫码的商品标签' : '销售订单关联成品配方，按天虹作业结构展开'}</p></div><div className="head-chip"><span className="live-dot" />实时数据</div></div><div className="preview-frame"><div className="preview-toolbar"><span>预览区域</span><span>{mode === 'label' ? `${config.width} × ${config.height} mm · ${labelCopies.length} 张` : 'A4 · 横向'}</span></div><div className="preview-canvas">{!filteredOrders.length || (mode === 'label' && !labelCopies.length) ? <EmptyPreview /> : mode === 'label' ? <LabelSheet orders={labelCopies} config={{ ...config, copiesByQuantity: false }} /> : <WorkOrder orders={filteredOrders} />}</div></div></main>
+    <main className="workspace"><div className="workspace-head"><div><div className="eyebrow">PRINT PREVIEW</div><h1>{title}</h1><p>{mode === 'label' ? '将今日销售订单转成可直接扫码的商品标签' : '按出货日期展开花束加工单'}</p></div><div className="head-chip"><span className="live-dot" />{shipDateLabel}</div></div><div className="preview-frame"><div className="preview-toolbar"><span>预览区域</span><span>{mode === 'label' ? `${config.width} × ${config.height} mm · ${labelCopies.length} 张` : `A4 · 横向 · ${shipDateLabel}`}</span></div><div className="preview-canvas">{!filteredOrders.length || (mode === 'label' && !labelCopies.length) ? <EmptyPreview /> : mode === 'label' ? <LabelSheet orders={labelCopies} config={{ ...config, copiesByQuantity: false }} /> : <WorkOrder orders={filteredOrders} shipDateLabel={shipDateLabel} />}</div></div></main>
   </div>;
 }

@@ -32,10 +32,16 @@ export type LabelConfig = {
   gapY: number;
   marginX: number;
   marginY: number;
+  padding: number;
+  contentGap: number;
+  fontFamily: string;
+  fontSize: number;
+  fontWeight: number;
+  textAlign: 'left' | 'center' | 'right';
+  lineHeight: number;
   copiesByQuantity: boolean;
   showName: boolean;
   showCode: boolean;
-  showQuantity: boolean;
   showDate: boolean;
   showCustomer: boolean;
   showCareInstructions: boolean;
@@ -80,10 +86,16 @@ export const defaultLabelConfig: LabelConfig = {
   gapY: 2,
   marginX: 5,
   marginY: 5,
+  padding: 2.2,
+  contentGap: 0.5,
+  fontFamily: 'Microsoft YaHei, 微软雅黑, sans-serif',
+  fontSize: 3.2,
+  fontWeight: 600,
+  textAlign: 'center',
+  lineHeight: 1.2,
   copiesByQuantity: false,
   showName: true,
   showCode: true,
-  showQuantity: true,
   showDate: true,
   showCustomer: true,
   showCareInstructions: false,
