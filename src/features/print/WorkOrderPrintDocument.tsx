@@ -146,7 +146,7 @@ function customerLabel(orders: readonly PrintOrder[]) {
 function dateLabel(orders: readonly PrintOrder[], provided?: string) {
   if (provided) return provided;
   const dates = [...new Set(orders.map((order) => order.shipDate.trim()).filter(Boolean))].sort();
-  return dates.length === 0 ? '未填写出货日期' : dates.length === 1 ? dates[0] : `多个出货日期（${dates.length} 天）`;
+  return dates.length === 0 ? '未填写出货日期' : dates.length === 1 ? dates[0] : `${dates[0]} 至 ${dates[dates.length - 1]}`;
 }
 
 function tableValue(column: WorkOrderColumnId, order: PrintOrder, recipeIndex: number): ReactNode {

@@ -166,6 +166,18 @@ export function aggregateOrders(orders: PrintOrder[]): PrintOrder[] {
   return [...byProduct.values()];
 }
 
+/** Keeps加工单 separate by the business context that must appear in its header. */
+export function groupOrdersForWorkOrders(orders: PrintOrder[]): PrintOrder[][] {
+  const groups = new Map<string, PrintOrder[]>();
+  for (const order of orders.filter((item) => item.quantity > 0)) {
+    const key = `${order.customer.trim() || '未填写客户'}\u0000${order.shipDate.trim() || '未填写出货日期'}`;
+    const group = groups.get(key) ?? [];
+    group.push(order);
+    groups.set(key, group);
+  }
+  return [...groups.values()];
+}
+
 export function expandLabelCopies(orders: PrintOrder[], config: LabelConfig, customCopies?: number): PrintOrder[] {
   if (customCopies !== undefined) {
     const copies = Math.max(0, Math.round(customCopies));
@@ -183,6 +195,32 @@ export function expandLabelCopies(orders: PrintOrder[], config: LabelConfig, cus
 function dateKey(value: string): string {
   const match = value.match(/(\d{4})[/-](\d{1,2})[/-](\d{1,2})/);
   return match ? `${match[1]}-${match[2].padStart(2, '0')}-${match[3].padStart(2, '0')}` : '';
+}
+
+export function formatDateDisplay(value: string): string {
+  const key = dateKey(value);
+  if (!key) return value || '';
+  const [year, month, day] = key.split('-');
+  return `${year}/${month}/${day}`;
+}
+
+/** Returns a human-readable date context for the current print selection. */
+export function formatSelectedDateRange(filter: PrintFilter, orders: PrintOrder[] = []): string {
+  if (filter.dateMode === 'exact') return filter.exactDate ? formatDateDisplay(filter.exactDate) : '未选择日期';
+  if (filter.dateMode === 'offset') {
+    const target = shiftDate(filter.baseDate, Math.max(0, Math.round(filter.offsetDays)));
+    return target ? formatDateDisplay(target) : '未选择日期';
+  }
+  if (filter.dateMode === 'range') {
+    const start = filter.startDate ? formatDateDisplay(filter.startDate) : '开始日期';
+    const end = filter.endDate ? formatDateDisplay(filter.endDate) : '结束日期';
+    return start === end ? start : `${start} 至 ${end}`;
+  }
+  const dates = [...new Set(orders.map((order) => dateKey(order.shipDate)).filter(Boolean))].sort();
+  if (!dates.length) return '全部日期';
+  const first = formatDateDisplay(dates[0]);
+  const last = formatDateDisplay(dates[dates.length - 1]);
+  return first === last ? first : `${first} 至 ${last}`;
 }
 
 export function splitCategoryValues(value: string): string[] {

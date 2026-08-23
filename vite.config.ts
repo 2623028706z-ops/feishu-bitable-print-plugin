@@ -5,7 +5,7 @@ export default defineConfig({
   base: './',
   plugins: [react()],
   build: {
-    target: 'es2020',
+    target: 'es2019',
     sourcemap: false,
   },
 });

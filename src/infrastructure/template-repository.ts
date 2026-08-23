@@ -13,6 +13,11 @@ export class TemplateConflictError extends Error {
   constructor(message = '模板已被其他成员更新，请重新载入或复制为新模板') { super(message); this.name = 'TemplateConflictError'; }
 }
 
+export type TemplateCleanupFailure = {
+  recordId: string;
+  error: Error;
+};
+
 type BaseLike = { getTableByName: (name: string) => Promise<any>; addTable?: (config: any) => Promise<any> };
 type RepositorySnapshot = { templates: PrintTemplate[]; available: boolean; editable: boolean; reason?: 'missing-table' | 'permission-denied' };
 
@@ -42,6 +47,7 @@ export class TemplateRepository {
   private readonly tableName: string;
   private table: any;
   private fields: Record<string, string> = {};
+  private defaultCleanupFailures: TemplateCleanupFailure[] = [];
 
   constructor(base?: BaseLike, tableName = TEMPLATE_TABLE_NAME) {
     this.base = base ?? (bitable?.base as unknown as BaseLike | undefined) ?? {
@@ -81,8 +87,19 @@ export class TemplateRepository {
     return { [this.field(TEMPLATE_FIELD_NAMES.id)]: template.id, [this.field(TEMPLATE_FIELD_NAMES.name)]: template.name, [this.field(TEMPLATE_FIELD_NAMES.type)]: template.type, [this.field(TEMPLATE_FIELD_NAMES.paper)]: template.type === 'label' ? `${template.paper.widthMm}×${template.paper.heightMm}mm` : `A4 ${template.orientation === 'landscape' ? '横向' : '纵向'}`, [this.field(TEMPLATE_FIELD_NAMES.json)]: JSON.stringify(template), [this.field(TEMPLATE_FIELD_NAMES.version)]: template.version, [this.field(TEMPLATE_FIELD_NAMES.isDefault)]: template.isDefault, [this.field(TEMPLATE_FIELD_NAMES.status)]: '启用' };
   }
 
-  private async clearDefault(type: TemplateType, exceptId?: string): Promise<void> {
-    for (const record of await this.readRecords()) { const current = this.decode(record); if (current?.type === type && current.isDefault && current.id !== exceptId) { const next = { ...current, isDefault: false }; await this.table.setRecord(record.recordId, this.fieldsFor(next)); } }
+  private async clearDefault(type: TemplateType, exceptId?: string): Promise<TemplateCleanupFailure[]> {
+    const failures: TemplateCleanupFailure[] = [];
+    for (const record of await this.readRecords()) {
+      const current = this.decode(record);
+      if (!current || current.type !== type || !current.isDefault || current.id === exceptId) continue;
+      const next = { ...current, isDefault: false };
+      try {
+        await this.table.setRecord(record.recordId, this.fieldsFor(next));
+      } catch (cause) {
+        failures.push({ recordId: record.recordId, error: cause instanceof Error ? cause : new Error(String(cause)) });
+      }
+    }
+    return failures;
   }
 
   async save(template: PrintTemplate, expectedVersion?: number): Promise<PrintTemplate> {
@@ -90,8 +107,21 @@ export class TemplateRepository {
     const currentRecords = await this.readRecords(); const currentRecord = currentRecords.find((record) => this.decode(record)?.id === template.id); const current = currentRecord ? this.decode(currentRecord) : undefined;
     if (expectedVersion !== undefined && current && current.version !== expectedVersion) throw new TemplateConflictError();
     const next = { ...migrateTemplateConfig(template, template.type), version: (current?.version || template.version || 0) + 1 } as PrintTemplate;
-    try { if (next.isDefault) await this.clearDefault(next.type, next.id); if (currentRecord) await table.setRecord(currentRecord.recordId, this.fieldsFor(next)); else await table.addRecord(this.fieldsFor(next)); } catch (error) { if (isPermission(error)) throw new TemplatePermissionError(); throw error; }
+    try {
+      // Write the new default first. If cleanup fails afterwards, the target
+      // remains a valid default instead of leaving the type without one.
+      if (currentRecord) await table.setRecord(currentRecord.recordId, this.fieldsFor(next));
+      else await table.addRecord(this.fieldsFor(next));
+    } catch (error) {
+      if (isPermission(error)) throw new TemplatePermissionError();
+      throw error;
+    }
+    this.defaultCleanupFailures = next.isDefault ? await this.clearDefault(next.type, next.id) : [];
     return next;
+  }
+
+  getLastDefaultCleanupFailures(): readonly TemplateCleanupFailure[] {
+    return this.defaultCleanupFailures;
   }
 
   async create(type: TemplateType, name?: string): Promise<PrintTemplate> { const template = createDefaultTemplate(type); return this.save({ ...template, id: `${type}-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`, name: name?.trim() || template.name, isDefault: false } as PrintTemplate, 0); }

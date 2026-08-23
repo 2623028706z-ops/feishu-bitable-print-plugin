@@ -1,10 +1,16 @@
 import { describe, expect, it } from 'vitest';
-import { adjustPrintDate, aggregateOrders, applyQuantityFilter, defaultLabelConfig, defaultPrintFilter, expandLabelCopies, filterOrders, sampleOrders, splitCategoryValues } from './print-model';
+import { adjustPrintDate, aggregateOrders, applyQuantityFilter, defaultLabelConfig, defaultPrintFilter, expandLabelCopies, filterOrders, formatSelectedDateRange, groupOrdersForWorkOrders, sampleOrders, splitCategoryValues } from './print-model';
 
 describe('print model', () => {
   it('adjusts only the label date with T plus n', () => {
     expect(adjustPrintDate('2026/08/23', 2)).toBe('2026/08/25');
     expect(adjustPrintDate('2026/08/23', -1)).toBe('2026/08/22');
+  });
+  it('formats an explicit date context without ambiguous multiple-date text', () => {
+    expect(formatSelectedDateRange({ ...defaultPrintFilter, dateMode: 'exact', exactDate: '2026-08-23' })).toBe('2026/08/23');
+    expect(formatSelectedDateRange({ ...defaultPrintFilter, dateMode: 'range', startDate: '2026-08-23', endDate: '2026-08-25' })).toBe('2026/08/23 至 2026/08/25');
+    expect(formatSelectedDateRange({ ...defaultPrintFilter, dateMode: 'all' }, sampleOrders)).toBe('2026/08/24');
+    expect(formatSelectedDateRange({ ...defaultPrintFilter, dateMode: 'all' }, [...sampleOrders, { ...sampleOrders[0], shipDate: '2026/08/26' }])).toBe('2026/08/24 至 2026/08/26');
   });
   it('expands label copies from sales quantity only when enabled', () => {
     expect(expandLabelCopies(sampleOrders, defaultLabelConfig)).toHaveLength(2);
@@ -17,6 +23,12 @@ describe('print model', () => {
     expect(grouped).toHaveLength(1);
     expect(grouped[0].quantity).toBe(15);
     expect(grouped[0].recipe[0].totalStems).toBe(90);
+  });
+  it('keeps work orders separate by customer and ship date', () => {
+    const sameProduct = sampleOrders[0];
+    const groups = groupOrdersForWorkOrders([sameProduct, { ...sameProduct, recordId: 'other-customer', customer: '花众' }, { ...sameProduct, recordId: 'other-date', shipDate: '2026/08/25' }]);
+    expect(groups).toHaveLength(3);
+    expect(groups.every((group) => group.length === 1)).toBe(true);
   });
 
   it('filters by customer, product, and T plus n date', () => {
