@@ -1,5 +1,5 @@
 export const MIN_FIXED_COPIES = 1;
-export const MAX_FIXED_COPIES = 500;
+export const MAX_FIXED_COPIES = 5000;
 export const MAX_TOTAL_PRINT_ITEMS = 5000;
 export const MAX_PREVIEW_ITEMS = 100;
 

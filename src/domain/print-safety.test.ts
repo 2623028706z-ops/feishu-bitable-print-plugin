@@ -12,7 +12,7 @@ describe('print safety domain', () => {
     expect(clampFixedCopies(0)).toBe(1);
     expect(clampFixedCopies(3.6)).toBe(4);
     expect(clampFixedCopies(500)).toBe(500);
-    expect(clampFixedCopies(10000)).toBe(500);
+    expect(clampFixedCopies(10000)).toBe(5000);
     expect(clampFixedCopies('bad')).toBe(1);
   });
 

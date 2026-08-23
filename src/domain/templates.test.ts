@@ -55,7 +55,7 @@ describe('versioned print templates', () => {
     expect(migrated.version).toBe(CURRENT_TEMPLATE_VERSION);
     expect(migrated.type).toBe('label');
     expect(migrated.labelDateOffsetDays).toBe(2);
-    expect(migrated.fixedCopies).toBe(500);
+    expect(migrated.fixedCopies).toBe(5000);
     expect(migrated.elements[0].x + migrated.elements[0].width).toBeLessThanOrEqual(50);
     expect(migrated.elements[0].y + migrated.elements[0].height).toBeLessThanOrEqual(30);
   });
