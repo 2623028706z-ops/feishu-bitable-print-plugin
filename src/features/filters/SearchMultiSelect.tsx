@@ -36,7 +36,7 @@ function SearchMenuList(props: MenuListProps<FilterOption, true, SelectGroup> & 
             border: 0,
             borderBottom: '1px solid #e5ebe7',
             background: '#f7faf8',
-            color: '#28785b',
+            color: '#2b7fa3',
             cursor: 'pointer',
             fontSize: 12,
             padding: '8px 12px',
@@ -55,18 +55,18 @@ const styles: StylesConfig<FilterOption, true, SelectGroup> = {
   control: (base, state) => ({
     ...base,
     minHeight: 34,
-    borderColor: state.isFocused ? '#5b9d85' : '#d8e2dc',
+            borderColor: state.isFocused ? '#4a9cbe' : '#d8e2dc',
     borderRadius: 5,
-    boxShadow: state.isFocused ? '0 0 0 2px #e1f0ea' : 'none',
-    ':hover': { borderColor: '#5b9d85' },
+            boxShadow: state.isFocused ? '0 0 0 3px #e1f0f6' : 'none',
+            ':hover': { borderColor: '#4a9cbe' },
   }),
   valueContainer: (base) => ({ ...base, gap: 2, padding: '3px 8px' }),
-  multiValue: (base) => ({ ...base, borderRadius: 4, backgroundColor: '#e8f3ed' }),
-  multiValueLabel: (base) => ({ ...base, color: '#286b52', fontSize: 11 }),
+        multiValue: (base) => ({ ...base, borderRadius: 4, backgroundColor: '#e5f2f7' }),
+        multiValueLabel: (base) => ({ ...base, color: '#226b8a', fontSize: 11 }),
   multiValueRemove: (base) => ({
     ...base,
-    color: '#4c806d',
-    ':hover': { backgroundColor: '#cde7da', color: '#174d39' },
+            color: '#3c7e9a',
+            ':hover': { backgroundColor: '#d3eaf3', color: '#1e5874' },
   }),
   input: (base) => ({ ...base, fontSize: 12 }),
   placeholder: (base) => ({ ...base, color: '#8a9890', fontSize: 12 }),
@@ -75,8 +75,8 @@ const styles: StylesConfig<FilterOption, true, SelectGroup> = {
     color: '#1d2a23',
     cursor: 'pointer',
     fontSize: 12,
-    backgroundColor: state.isSelected ? '#e1f0ea' : state.isFocused ? '#f1f7f4' : '#fff',
-    ':active': { backgroundColor: '#d7ece1' },
+            backgroundColor: state.isSelected ? '#e1f0f6' : state.isFocused ? '#f2f8fb' : '#fff',
+            ':active': { backgroundColor: '#d7edf5' },
   }),
   menu: (base) => ({ ...base, zIndex: 20, borderRadius: 5, overflow: 'hidden' }),
   menuList: (base) => ({ ...base, padding: 0 }),
@@ -117,7 +117,7 @@ export function SearchMultiSelect({
     <div className={className}>
       <div style={{ alignItems: 'center', display: 'flex', justifyContent: 'space-between', marginBottom: 5 }}>
         <label style={{ color: '#66756c', fontSize: 11, fontWeight: 500 }}>{label}</label>
-        <span aria-live="polite" style={{ color: '#28785b', fontSize: 10 }}>
+        <span aria-live="polite" style={{ color: '#2b7fa3', fontSize: 10 }}>
           {value.length ? `已选 ${value.length}` : '未选择'}
         </span>
       </div>

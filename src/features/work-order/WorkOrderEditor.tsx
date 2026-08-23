@@ -166,7 +166,7 @@ export function WorkOrderEditor({ value, onChange, onReset, disabled = false }: 
           <div style={{ fontSize: 13, fontWeight: 700 }}>加工单模板</div>
           <div style={{ color: '#687172', fontSize: 10, marginTop: 3 }}>A4 版式与表格内容</div>
         </div>
-        <button aria-label="恢复默认加工单模板" disabled={disabled} onClick={reset} style={{ alignItems: 'center', background: 'transparent', border: 0, color: '#176b54', display: 'inline-flex', gap: 4, padding: 4 }} type="button">
+        <button aria-label="恢复默认加工单模板" disabled={disabled} onClick={reset} style={{ alignItems: 'center', background: 'transparent', border: 0, color: '#2b7fa3', display: 'inline-flex', gap: 4, padding: 4 }} type="button">
           <RotateCcw size={15} /> <span style={{ fontSize: 11 }}>重置</span>
         </button>
       </div>

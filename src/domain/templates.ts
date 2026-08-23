@@ -109,7 +109,7 @@ function a4Defaults(): A4Template {
     version: CURRENT_TEMPLATE_VERSION, type: 'a4', id: 'system-a4-default', name: '标准加工单', isDefault: true, orientation: 'landscape',
     margins: { top: 10, right: 12, bottom: 8, left: 12 }, title: '花束加工单', titleVisible: true, headerVisible: true, footerVisible: true, repeatHeader: true,
     fontFamily: defaultFont, fontSize: 2.8, fontWeight: 400, textAlign: 'left', rowHeight: 10, padding: 2, borderVisible: true, borderWidth: .25, borderStyle: 'solid', borderColor: '#9da9a4',
-    presentation: { kicker: '花众生产打印', showCustomer: true, showShipDate: true, showOrderCount: true, footerText: '加工扎数取销售数量（扎），同花束按订单合并。', showPageNumber: true, titleSizeMm: 7, metaSizeMm: 2.5, lineHeight: 1.35, cellPaddingMm: 2, headerBackground: '#edf2ef' },
+    presentation: { kicker: '花众生产打印', showCustomer: true, showShipDate: true, showOrderCount: true, footerText: '加工扎数取销售数量（扎），同花束按订单合并。', showPageNumber: true, titleSizeMm: 7, metaSizeMm: 2.5, lineHeight: 1.35, cellPaddingMm: 2, headerBackground: '#e8f3f7' },
     columns: A4_REQUIRED_COLUMN_IDS.map((id, index) => ({ id, label: labels[id], width: [23, 22, 12, 10, 12, 21][index], visible: true, align: index === 0 || index === 1 || index === 5 ? 'left' : 'center' })),
   };
 }
