@@ -4,7 +4,7 @@ import JsBarcode from 'jsbarcode';
 import { AlertTriangle, Barcode, Check, FileText, LayoutGrid, LoaderCircle, Printer, RefreshCw, Save, Settings2, SlidersHorizontal } from 'lucide-react';
 import { bitable } from '@lark-base-open/js-sdk';
 import { useReactToPrint } from 'react-to-print';
-import { adjustPrintDate, defaultLabelConfig, defaultPrintFilter, expandLabelCopies, filterOrders, formatSelectedDateRange, groupOrdersForWorkOrders, issueLabel, splitCategoryValues, type LabelConfig, type PrintFilter, type PrintOrder } from './lib/print-model';
+import { adjustPrintDate, defaultLabelConfig, defaultPrintFilter, expandLabelCopies, filterOrders, formatSelectedDateRange, groupOrdersForWorkOrders, issueLabel, sampleOrders, splitCategoryValues, type LabelConfig, type PrintFilter, type PrintOrder } from './lib/print-model';
 import { loadFeishuOrders } from './lib/feishu-adapter';
 import { SearchMultiSelect } from './features/filters/SearchMultiSelect';
 import { LabelLayoutEditor } from './features/templates/LabelLayoutEditor';
@@ -13,7 +13,7 @@ import { clampFixedCopies, limitPreviewItems, MAX_TOTAL_PRINT_ITEMS, validatePri
 import { WorkOrderEditor } from './features/work-order/WorkOrderEditor';
 import { WorkOrderPrintDocument, createDefaultWorkOrderTemplate, type WorkOrderTemplate } from './features/print/WorkOrderPrintDocument';
 import { createTemplateRepository, TemplatePermissionError } from './infrastructure/template-repository';
-import { OperationTimeoutError, retry } from './lib/retry';
+import { OperationTimeoutError, retry, withTimeout } from './lib/retry';
 
 type Mode = 'label' | 'work-order';
 const MODE_STORAGE_KEY = 'huazhong-print-mode';
@@ -58,13 +58,21 @@ function sharedTemplateFromWork(template: WorkOrderTemplate, current: A4Template
   return migrateTemplateConfig({ ...current, name: template.name, title: template.title, orientation: template.orientation, margins: template.marginsMm, fontFamily: template.typography.fontFamily, fontSize: template.typography.bodySizeMm, fontWeight: template.typography.fontWeight, textAlign: template.typography.align, borderVisible: template.table.borderWidthMm > 0, borderWidth: template.table.borderWidthMm, borderStyle: template.table.borderStyle, borderColor: template.table.borderColor, titleVisible: true, headerVisible: template.header.visible, footerVisible: template.footer.visible, columns: template.columns.map((column) => ({ id: column.id, label: column.label, width: column.width, visible: column.visible, align: column.align })) }, 'a4');
 }
 
+const barcodeDataUriCache = new Map<string, string>();
+
+function barcodeDataUri(value: string): string {
+  const cached = barcodeDataUriCache.get(value);
+  if (cached) return cached;
+  const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+  svg.setAttribute('xmlns', 'http://www.w3.org/2000/svg');
+  JsBarcode(svg, value, { format: 'CODE128', displayValue: false, margin: 0, height: 34, width: 1.25 });
+  const uri = `data:image/svg+xml;charset=utf-8,${encodeURIComponent(svg.outerHTML)}`;
+  barcodeDataUriCache.set(value, uri);
+  return uri;
+}
+
 function BarcodeView({ value }: { value: string }) {
-  const ref = useRef<SVGSVGElement>(null);
-  useEffect(() => {
-    if (!ref.current || !value) return;
-    JsBarcode(ref.current, value, { format: 'CODE128', displayValue: false, margin: 0, height: 34, width: 1.25 });
-  }, [value]);
-  return <svg ref={ref} className="barcode" aria-label={`条码 ${value}`} />;
+  return <img src={barcodeDataUri(value)} className="barcode" alt={`条码 ${value}`} />;
 }
 
 function IssueSummary({ orders }: { orders: PrintOrder[] }) {
@@ -111,6 +119,15 @@ function todayInput() {
   return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
 }
 
+function isEmbeddedFeishuHost(): boolean {
+  try { return window.top !== window.self; } catch { return true; }
+}
+
+function previewOrdersForToday(): PrintOrder[] {
+  const today = todayInput().replace(/-/g, '/');
+  return sampleOrders.map((order, index) => ({ ...order, recordId: `preview-${index + 1}`, shipDate: today }));
+}
+
 function labelSheetMetrics(config: LabelConfig) {
   const sheetWidth = config.marginX * 2 + config.columns * config.width + (config.columns - 1) * config.gapX;
   const sheetHeight = config.marginY * 2 + config.rows * config.height + (config.rows - 1) * config.gapY;
@@ -150,14 +167,14 @@ export default function App() {
   useEffect(() => { storageSet(LABEL_TEMPLATE_STORAGE_KEY, JSON.stringify(labelTemplate)); }, [labelTemplate]);
   useEffect(() => { storageSet(WORK_TEMPLATE_STORAGE_KEY, JSON.stringify(workTemplate)); }, [workTemplate]);
   useEffect(() => {
-    repository.load().then((snapshot) => {
+    withTimeout(repository.load(), 5000).then((snapshot) => {
       const shared = snapshot.templates.find((template) => template.type === 'label' && template.isDefault);
       const sharedA4 = snapshot.templates.find((template) => template.type === 'a4' && template.isDefault);
       if (shared?.type === 'label') { setLabelTemplate(shared); setConfig(configFromTemplate(shared)); }
       if (sharedA4?.type === 'a4') { setSharedA4Template(sharedA4); setWorkTemplate(workFromSharedTemplate(sharedA4)); }
       if (snapshot.reason === 'missing-table') { setTemplateMissing(true); setTemplateMessage('未找到打印模板配置表，当前使用本地模板'); }
       if (!snapshot.editable && snapshot.reason === 'permission-denied') setTemplateMessage('共享模板只读：当前成员没有配置表编辑权限');
-    }).catch(() => setTemplateMessage('共享模板读取失败，当前使用本地模板'));
+    }).catch(() => setTemplateMessage('共享模板读取超时，当前使用本地模板'));
   }, [repository]);
 
   useEffect(() => { storageSet(MODE_STORAGE_KEY, mode); }, [mode]);
@@ -174,6 +191,13 @@ export default function App() {
       setTableName(result.tableName);
     } catch (cause) {
       if (sequence !== refreshSequence.current) return;
+      if (!isEmbeddedFeishuHost()) {
+        setOrders(previewOrdersForToday());
+        setSource('脱离飞书预览数据');
+        setTableName('销售订单示例');
+        setError('');
+        return;
+      }
       setError(cause instanceof OperationTimeoutError ? '飞书连接超时，请确认插件通过飞书打开后重试' : cause instanceof Error ? cause.message : '无法读取飞书当前表');
       setSource('未连接飞书');
     } finally { if (sequence === refreshSequence.current) setLoading(false); }
@@ -228,7 +252,7 @@ export default function App() {
       const expected = labelCopies.filter((order) => Boolean(order.productCode)).length;
       const startedAt = Date.now();
       while (expected > 0 && Date.now() - startedAt < 15000) {
-        const rendered = [...document.querySelectorAll('.label-card .barcode')].filter((node) => node.childElementCount > 0).length;
+        const rendered = [...document.querySelectorAll<HTMLImageElement>('.label-card .barcode')].filter((node) => node.complete && node.naturalWidth > 0).length;
         if (rendered >= expected) break;
         await new Promise<void>((resolve) => window.setTimeout(resolve, 50));
       }
