@@ -325,6 +325,7 @@ button:focus-visible, input:focus-visible, select:focus-visible {
   .control-panel, .workspace-head, .preview-toolbar { display: none !important; }
   .app-shell, .workspace, .preview-frame, .preview-canvas { display: block; width: auto; min-width: 0; min-height: 0; margin: 0; padding: 0; border: 0; box-shadow: none; background: white; overflow: visible; }
   .print-surface { box-shadow: none; margin: 0; }
-  .label-card { break-inside: avoid; }
+  .label-sheet { display: grid !important; box-sizing: border-box; break-inside: avoid; page-break-inside: avoid; }
+  .label-card { break-inside: avoid; page-break-inside: avoid; }
   .work-order-document { break-after: page; }
 }

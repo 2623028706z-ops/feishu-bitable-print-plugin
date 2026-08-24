@@ -96,11 +96,11 @@ function labelDefaults(): LabelTemplate {
   ];
   return {
     version: CURRENT_TEMPLATE_VERSION, type: 'label', id: 'system-label-default', name: '标准标签', isDefault: true,
-    paper: { widthMm: 50, heightMm: 30 }, grid: { columns: 2, rows: 8, gapXmm: 2, gapYmm: 2, marginXmm: 5, marginYmm: 5 }, elements,
+    paper: { widthMm: 50, heightMm: 30 }, grid: { columns: 1, rows: 1, gapXmm: 0, gapYmm: 0, marginXmm: 0, marginYmm: 0 }, elements,
     labelDateOffsetDays: 0, fixedCopies: 1, fontFamily: defaultFont, fontSize: 3.2, fontWeight: 600, textAlign: 'center', lineHeight: 1.2, padding: 2.2, contentGap: .5, copiesByQuantity: false,
     showName: true, showCode: true, showDate: true, showCustomer: true, showCareInstructions: false,
     styles: { fontFamily: defaultFont, fontSize: 3.2, fontWeight: 600, align: 'center', lineHeight: 1.2, padding: 2.2, contentGap: .5 },
-    width: 50, height: 30, columns: 2, rows: 8, gapX: 2, gapY: 2, marginX: 5, marginY: 5,
+    width: 50, height: 30, columns: 1, rows: 1, gapX: 0, gapY: 0, marginX: 0, marginY: 0,
   };
 }
 

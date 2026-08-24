@@ -39,9 +39,17 @@ function readMemory<T>(key: string, fallback: T): T {
   }
 }
 
+function readLabelConfigMemory(): LabelConfig {
+  const stored = readMemory(CONFIG_STORAGE_KEY, defaultLabelConfig);
+  const isLegacySheetDefault = stored.columns === 2 && stored.rows === 8 && stored.gapX === 2 && stored.gapY === 2 && stored.marginX === 5 && stored.marginY === 5;
+  return isLegacySheetDefault ? { ...stored, columns: 1, rows: 1, gapX: 0, gapY: 0, marginX: 0, marginY: 0 } : stored;
+}
+
 function configFromTemplate(template: LabelTemplate): LabelConfig {
+  const legacySheetGrid = template.grid.columns === 2 && template.grid.rows === 8 && template.grid.gapXmm === 2 && template.grid.gapYmm === 2 && template.grid.marginXmm === 5 && template.grid.marginYmm === 5;
+  const grid = legacySheetGrid ? { columns: 1, rows: 1, gapXmm: 0, gapYmm: 0, marginXmm: 0, marginYmm: 0 } : template.grid;
   const visible = (kind: string, fallback: boolean) => template.elements.find((element) => element.kind === kind)?.visible ?? fallback;
-  return { ...defaultLabelConfig, width: template.paper.widthMm, height: template.paper.heightMm, columns: template.grid.columns, rows: template.grid.rows, gapX: template.grid.gapXmm, gapY: template.grid.gapYmm, marginX: template.grid.marginXmm, marginY: template.grid.marginYmm, padding: template.padding, contentGap: template.contentGap, fontFamily: template.fontFamily, fontSize: template.fontSize, fontWeight: template.fontWeight, textAlign: template.textAlign, lineHeight: template.lineHeight, labelDateOffsetDays: template.labelDateOffsetDays, copiesByQuantity: template.copiesByQuantity, showName: visible('name', template.showName), showCode: visible('barcode', template.showCode) && visible('code', template.showCode), showDate: visible('date', template.showDate), showCustomer: visible('customer', template.showCustomer), showCareInstructions: visible('careInstructions', template.showCareInstructions) };
+  return { ...defaultLabelConfig, width: template.paper.widthMm, height: template.paper.heightMm, columns: grid.columns, rows: grid.rows, gapX: grid.gapXmm, gapY: grid.gapYmm, marginX: grid.marginXmm, marginY: grid.marginYmm, padding: template.padding, contentGap: template.contentGap, fontFamily: template.fontFamily, fontSize: template.fontSize, fontWeight: template.fontWeight, textAlign: template.textAlign, lineHeight: template.lineHeight, labelDateOffsetDays: template.labelDateOffsetDays, copiesByQuantity: template.copiesByQuantity, showName: visible('name', template.showName), showCode: visible('barcode', template.showCode) && visible('code', template.showCode), showDate: visible('date', template.showDate), showCustomer: visible('customer', template.showCustomer), showCareInstructions: visible('careInstructions', template.showCareInstructions) };
 }
 
 function templateFromConfig(config: LabelConfig, current: LabelTemplate): LabelTemplate {
@@ -153,7 +161,7 @@ export default function App() {
     const today = todayInput();
     return { ...remembered, dateMode: 'exact', exactDate: today, baseDate: today };
   });
-  const [config, setConfig] = useState<LabelConfig>(() => readMemory(CONFIG_STORAGE_KEY, defaultLabelConfig));
+  const [config, setConfig] = useState<LabelConfig>(() => readLabelConfigMemory());
   const [labelTemplate, setLabelTemplate] = useState<LabelTemplate>(() => migrateTemplateConfig(readMemory(LABEL_TEMPLATE_STORAGE_KEY, defaultLabelConfig), 'label'));
   const [workTemplate, setWorkTemplate] = useState<WorkOrderTemplate>(() => readMemory(WORK_TEMPLATE_STORAGE_KEY, createDefaultWorkOrderTemplate()));
   const [sharedA4Template, setSharedA4Template] = useState<A4Template>(() => createDefaultTemplate('a4'));
