@@ -58,6 +58,7 @@ export function labelPrintPageMetrics(config: Pick<LabelConfig, 'width' | 'heigh
   return {
     widthMm: config.width,
     heightMm: config.height,
+    orientation: config.width >= config.height ? 'landscape' : 'portrait',
     columns: 1,
     rows: 1,
     gapXmm: 0,
@@ -65,6 +66,12 @@ export function labelPrintPageMetrics(config: Pick<LabelConfig, 'width' | 'heigh
     marginXmm: 0,
     marginYmm: 0,
   } as const;
+}
+
+export function labelPrintPageStyle(config: Pick<LabelConfig, 'width' | 'height'>): string {
+  const page = labelPrintPageMetrics(config);
+  const size = `${page.widthMm}mm ${page.heightMm}mm`;
+  return `@page { size: ${size}; margin: 0; } @page label-sheet-page { size: ${size}; margin: 0; } html, body { margin: 0 !important; padding: 0 !important; }`;
 }
 
 export type DateFilterMode = 'all' | 'exact' | 'range' | 'offset';

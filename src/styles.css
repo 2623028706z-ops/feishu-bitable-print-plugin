@@ -52,6 +52,10 @@ button { cursor: pointer; }
 .number-field { display: block; }.number-field span { color: var(--muted); display: block; font-size: 10px; margin-bottom: 5px; }
 .number-field input { width: 100%; height: 34px; border: 1px solid var(--line); border-radius: 5px; padding: 0 9px; background: white; color: var(--ink); outline: none; }
 .number-field input:focus { border-color: #5b9d85; box-shadow: 0 0 0 2px #e1f0ea; }
+.orientation-control { display: grid; gap: 6px; margin: 2px 0 10px; color: var(--muted); font-size: 11px; }
+.orientation-switch { display: grid; grid-template-columns: 1fr 1fr; gap: 4px; padding: 4px; border: 1px solid #cfe0e7; border-radius: 8px; background: #f4f9fb; }
+.orientation-switch button { height: 32px; border: 0; border-radius: 6px; background: transparent; color: var(--muted); font-size: 12px; }
+.orientation-switch button.active { background: white; color: var(--green-dark); box-shadow: 0 1px 4px rgba(31, 88, 116, .14); font-weight: 600; }
 .info-row, .toggle-row { display: flex; justify-content: space-between; align-items: center; min-height: 34px; border-bottom: 1px solid #edf0ee; font-size: 11px; }
 .info-row span { color: var(--muted); }.info-row b { font-size: 11px; }
 .toggle-row input { position: absolute; opacity: 0; }.toggle-row i { width: 28px; height: 16px; border-radius: 10px; background: #cbd1ce; position: relative; transition: .16s; }
