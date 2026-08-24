@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { adjustPrintDate, aggregateOrders, applyQuantityFilter, defaultLabelConfig, defaultPrintFilter, expandLabelCopies, filterOrders, formatSelectedDateRange, groupOrdersForWorkOrders, sampleOrders, splitCategoryValues } from './print-model';
+import { adjustPrintDate, aggregateOrders, applyQuantityFilter, defaultLabelConfig, defaultPrintFilter, expandLabelCopies, filterOrders, formatSelectedDateRange, groupOrdersForWorkOrders, labelPrintPageMetrics, sampleOrders, splitCategoryValues } from './print-model';
 
 describe('print model', () => {
   it('adjusts only the label date with T plus n', () => {
@@ -16,6 +16,19 @@ describe('print model', () => {
     expect(expandLabelCopies(sampleOrders, defaultLabelConfig)).toHaveLength(2);
     expect(expandLabelCopies(sampleOrders, { ...defaultLabelConfig, copiesByQuantity: true })).toHaveLength(20);
     expect(expandLabelCopies([sampleOrders[0]], defaultLabelConfig, 5000)).toHaveLength(5000);
+  });
+
+  it('keeps physical label pages at the configured size regardless of legacy grid values', () => {
+    expect(labelPrintPageMetrics({ width: 70, height: 40 })).toEqual({
+      widthMm: 70,
+      heightMm: 40,
+      columns: 1,
+      rows: 1,
+      gapXmm: 0,
+      gapYmm: 0,
+      marginXmm: 0,
+      marginYmm: 0,
+    });
   });
 
   it('aggregates matching products and recalculates recipe totals', () => {

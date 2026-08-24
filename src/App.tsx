@@ -4,7 +4,7 @@ import JsBarcode from 'jsbarcode';
 import { AlertTriangle, Barcode, Check, FileText, LayoutGrid, LoaderCircle, Printer, RefreshCw, Save, SearchX, Settings2 } from 'lucide-react';
 import { bitable } from '@lark-base-open/js-sdk';
 import { useReactToPrint } from 'react-to-print';
-import { adjustPrintDate, defaultLabelConfig, defaultPrintFilter, expandLabelCopies, filterOrders, formatSelectedDateRange, groupOrdersForWorkOrders, issueLabel, sampleOrders, splitCategoryValues, type LabelConfig, type PrintFilter, type PrintOrder } from './lib/print-model';
+import { adjustPrintDate, defaultLabelConfig, defaultPrintFilter, expandLabelCopies, filterOrders, formatSelectedDateRange, groupOrdersForWorkOrders, issueLabel, labelPrintPageMetrics, sampleOrders, splitCategoryValues, type LabelConfig, type PrintFilter, type PrintOrder } from './lib/print-model';
 import { loadFeishuOrders } from './lib/feishu-adapter';
 import { SearchMultiSelect } from './features/filters/SearchMultiSelect';
 const LabelLayoutEditor = lazy(() => import('./features/templates/LabelLayoutEditor').then((module) => ({ default: module.LabelLayoutEditor })));
@@ -95,12 +95,13 @@ function IssueSummary({ orders, mode }: { orders: PrintOrder[]; mode: Mode }) {
 
 function LabelSheet({ orders, config, template }: { orders: PrintOrder[]; config: LabelConfig; template?: LabelTemplate }) {
   const labels = expandLabelCopies(orders.filter((order) => order.quantity > 0), config);
-  const pageSize = Math.max(1, config.rows * config.columns);
-  const { sheetWidth, sheetHeight } = labelSheetMetrics(config);
-  const style = { '--label-width': `${config.width}mm`, '--label-height': `${config.height}mm`, '--sheet-width': `${sheetWidth}mm`, '--sheet-height': `${sheetHeight}mm`, '--gap-x': `${config.gapX}mm`, '--gap-y': `${config.gapY}mm`, '--margin-x': `${config.marginX}mm`, '--margin-y': `${config.marginY}mm`, '--label-columns': config.columns, '--label-rows': config.rows, '--label-font-family': config.fontFamily, '--label-font-size': `${config.fontSize}mm`, '--label-code-size': `${Math.max(1.4, config.fontSize * 0.68)}mm`, '--label-meta-size': `${Math.max(1.2, config.fontSize * 0.58)}mm`, '--label-customer-size': `${Math.max(1.1, config.fontSize * 0.54)}mm`, '--label-care-size': `${Math.max(1, config.fontSize * 0.5)}mm`, '--label-font-weight': config.fontWeight, '--label-align': config.textAlign, '--label-padding': `${config.padding}mm`, '--label-content-gap': `${config.contentGap}mm`, '--label-line-height': config.lineHeight } as CSSProperties;
-  const pageCount = Math.max(1, Math.ceil(labels.length / pageSize));
+  const page = labelPrintPageMetrics(config);
+  // Each label is a physical page. Legacy multi-cell grid values are retained
+  // in templates for editing but cannot create a hidden 2-up print layout.
+  const style = { '--label-width': `${config.width}mm`, '--label-height': `${config.height}mm`, '--sheet-width': `${page.widthMm}mm`, '--sheet-height': `${page.heightMm}mm`, '--gap-x': '0mm', '--gap-y': '0mm', '--margin-x': '0mm', '--margin-y': '0mm', '--label-columns': 1, '--label-rows': 1, '--label-font-family': config.fontFamily, '--label-font-size': `${config.fontSize}mm`, '--label-code-size': `${Math.max(1.4, config.fontSize * 0.68)}mm`, '--label-meta-size': `${Math.max(1.2, config.fontSize * 0.58)}mm`, '--label-customer-size': `${Math.max(1.1, config.fontSize * 0.54)}mm`, '--label-care-size': `${Math.max(1, config.fontSize * 0.5)}mm`, '--label-font-weight': config.fontWeight, '--label-align': config.textAlign, '--label-padding': `${config.padding}mm`, '--label-content-gap': `${config.contentGap}mm`, '--label-line-height': config.lineHeight } as CSSProperties;
+  const pageCount = Math.max(1, labels.length);
   return <>{Array.from({ length: pageCount }, (_, pageIndex) => <div className={`print-surface label-sheet${pageIndex < pageCount - 1 ? ' label-page-break' : ''}`} style={style} key={`label-page-${pageIndex}`}>
-    {labels.slice(pageIndex * pageSize, (pageIndex + 1) * pageSize).map((order) => <div className="label-card" key={order.recordId}>
+    {labels.slice(pageIndex, pageIndex + 1).map((order) => <div className="label-card" key={order.recordId}>
       {template ? template.elements.filter((element) => element.visible).map((element) => {
         const style = { position: 'absolute', left: `${element.x}mm`, top: `${element.y}mm`, width: `${element.width}mm`, height: `${element.height}mm`, fontFamily: element.fontFamily ?? template.fontFamily, fontSize: `${element.fontSizeMm ?? template.fontSize}mm`, fontWeight: element.fontWeight ?? template.fontWeight, textAlign: element.textAlign ?? element.align ?? template.textAlign, lineHeight: element.kind === 'careInstructions' || element.kind === 'care' ? template.lineHeight : 1.1 } as CSSProperties;
         if (element.kind === 'barcode') return order.productCode ? <div key={element.id} style={style}><BarcodeView value={order.productCode} /></div> : null;
@@ -141,12 +142,6 @@ function previewModeRequested(): boolean {
 function previewOrdersForToday(): PrintOrder[] {
   const today = todayInput().replace(/-/g, '/');
   return sampleOrders.map((order, index) => ({ ...order, recordId: `preview-${index + 1}`, shipDate: today }));
-}
-
-function labelSheetMetrics(config: LabelConfig) {
-  const sheetWidth = config.marginX * 2 + config.columns * config.width + (config.columns - 1) * config.gapX;
-  const sheetHeight = config.marginY * 2 + config.rows * config.height + (config.rows - 1) * config.gapY;
-  return { sheetWidth, sheetHeight };
 }
 
 export default function App() {
@@ -236,8 +231,8 @@ export default function App() {
 
   useEffect(() => {
     const styleId = 'label-sheet-page-style';
-    const metrics = labelSheetMetrics(config);
-    const rule = `@page label-sheet-page { size: ${metrics.sheetWidth}mm ${metrics.sheetHeight}mm; margin: 0; }`;
+    const metrics = labelPrintPageMetrics(config);
+    const rule = `@page label-sheet-page { size: ${metrics.widthMm}mm ${metrics.heightMm}mm; margin: 0; }`;
     if (mode !== 'label') {
       document.getElementById(styleId)?.remove();
       return;
@@ -250,7 +245,7 @@ export default function App() {
     return () => {
       if (style.isConnected) style.remove();
     };
-  }, [mode, config.width, config.height, config.columns, config.rows, config.gapX, config.gapY, config.marginX, config.marginY]);
+  }, [mode, config.width, config.height]);
 
   const customers = useMemo(() => [...new Set(orders.map((order) => order.customer).filter(Boolean))].sort(), [orders]);
   const categories = useMemo(() => [...new Set(orders.flatMap((order) => splitCategoryValues(order.category)))].sort(), [orders]);

@@ -76,6 +76,7 @@ button { cursor: pointer; }
 .print-surface { background: white; color: #111; box-shadow: 0 7px 22px rgba(28, 42, 34, .12); }
 .label-sheet { width: var(--sheet-width); height: var(--sheet-height); padding: var(--margin-y) var(--margin-x); display: grid; grid-template-columns: repeat(var(--label-columns), var(--label-width)); grid-template-rows: repeat(var(--label-rows), var(--label-height)); gap: var(--gap-y) var(--gap-x); align-content: start; }
 .label-sheet { page: label-sheet-page; }
+.label-sheet { max-width: var(--sheet-width); max-height: var(--sheet-height); overflow: hidden; }
 .label-page-break { page-break-after: always; break-after: page; }
 .label-card { position: relative; width: var(--label-width); height: var(--label-height); border: .25mm solid #202423; padding: var(--label-padding); overflow: hidden; display: flex; flex-direction: column; align-items: stretch; justify-content: center; gap: var(--label-content-gap); font-family: var(--label-font-family); font-size: var(--label-font-size); font-weight: var(--label-font-weight); line-height: var(--label-line-height); text-align: var(--label-align); box-sizing: border-box; }
 .label-name { width: 100%; font-size: var(--label-font-size); font-weight: var(--label-font-weight); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }

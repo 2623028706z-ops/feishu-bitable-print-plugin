@@ -48,6 +48,25 @@ export type LabelConfig = {
   showCareInstructions: boolean;
 };
 
+/**
+ * Physical page geometry for roll/single-label printing.
+ *
+ * The editor still keeps grid fields for backwards-compatible templates, but
+ * those fields must never change the physical page size of a label print job.
+ */
+export function labelPrintPageMetrics(config: Pick<LabelConfig, 'width' | 'height'>) {
+  return {
+    widthMm: config.width,
+    heightMm: config.height,
+    columns: 1,
+    rows: 1,
+    gapXmm: 0,
+    gapYmm: 0,
+    marginXmm: 0,
+    marginYmm: 0,
+  } as const;
+}
+
 export type DateFilterMode = 'all' | 'exact' | 'range' | 'offset';
 
 export type PrintFilter = {
