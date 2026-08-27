@@ -1,5 +1,6 @@
 import { Component, StrictMode, type ErrorInfo, type ReactNode } from 'react';
 import { createRoot } from 'react-dom/client';
+import { Button } from '@douyinfe/semi-ui';
 import App from './App';
 import './styles.css';
 
@@ -16,7 +17,7 @@ class AppErrorBoundary extends Component<{ children: ReactNode }, { error: strin
 
   render() {
     if (!this.state.error) return this.props.children;
-    return <main className="startup-error"><strong>插件加载失败</strong><p>{this.state.error}</p><button type="button" onClick={() => window.location.reload()}>重新加载</button></main>;
+    return <main className="startup-error"><strong>插件加载失败</strong><p>{this.state.error}</p><Button theme="solid" type="primary" onClick={() => window.location.reload()}>重新加载</Button></main>;
   }
 }
 
