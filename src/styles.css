@@ -1,5 +1,5 @@
-/* Semi 组件全量样式（含主题变量），相对路径绕过 exports 白名单限制。 */
-@import "../node_modules/@douyinfe/semi-ui/dist/css/semi.min.css";
+/* Semi 组件样式由组件 JS 自带 import 产出（构建时进 semi chunk 的 CSS），
+   不再手动 @import 全量 semi.min.css —— 否则会与组件自带 CSS 各出一份，重复约 660KB。 */
 
 /* 花众打印工作台 — 单一设计 token，无重复。
    品牌：清爽高级的鲜花供应链绿，弃冷天蓝、不用 AI 紫。 */
@@ -193,7 +193,7 @@ button:focus-visible, input:focus-visible, select:focus-visible {
 .layout-editor-loading { min-height: 120px; display: grid; place-items: center; border: 1px solid var(--line); border-radius: var(--radius); color: var(--muted); font-size: 12px; background: var(--surface); }
 
 /* ── Label sheet (print artifact) ─────────────────────── */
-.label-sheet { width: var(--sheet-width); height: var(--sheet-height); max-width: var(--sheet-width); max-height: var(--sheet-height); padding: var(--margin-y) var(--margin-x); display: grid; grid-template-columns: repeat(var(--label-columns), var(--label-width)); grid-template-rows: repeat(var(--label-rows), var(--label-height)); gap: var(--gap-y) var(--gap-x); align-content: start; overflow: hidden; page: label-sheet-page; }
+.label-sheet { width: var(--sheet-width); height: var(--sheet-height); max-width: var(--sheet-width); max-height: var(--sheet-height); padding: var(--margin-y) var(--margin-x); display: grid; grid-template-columns: repeat(var(--label-columns), var(--label-width)); grid-template-rows: repeat(var(--label-rows), var(--label-height)); gap: var(--gap-y) var(--gap-x); align-content: start; overflow: hidden; }
 .label-page-break { page-break-after: always; break-after: page; }
 .label-card {
   position: relative; width: var(--label-width); height: var(--label-height);

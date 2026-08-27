@@ -71,7 +71,9 @@ export function labelPrintPageMetrics(config: Pick<LabelConfig, 'width' | 'heigh
 export function labelPrintPageStyle(config: Pick<LabelConfig, 'width' | 'height'>): string {
   const page = labelPrintPageMetrics(config);
   const size = `${page.widthMm}mm ${page.heightMm}mm`;
-  return `@page { size: ${size}; margin: 0; } @page label-sheet-page { size: ${size}; margin: 0; } html, body { margin: 0 !important; padding: 0 !important; }`;
+  // 仅用匿名 @page：飞书桌面端内嵌 Chromium 对「命名 @page 里的 size」支持不全，
+  // 命名页会回退成 A4 纵向，导致标签被印在一整页 A4 的角落（竖版、尺寸不对）。
+  return `@page { size: ${size}; margin: 0; } html, body { margin: 0 !important; padding: 0 !important; }`;
 }
 
 export type DateFilterMode = 'all' | 'exact' | 'range' | 'offset';
