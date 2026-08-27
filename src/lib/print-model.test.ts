@@ -31,7 +31,10 @@ describe('print model', () => {
       marginYmm: 0,
     });
     expect(labelPrintPageMetrics({ width: 40, height: 70 }).orientation).toBe('portrait');
-    expect(labelPrintPageStyle({ width: 70, height: 40 })).toContain('@page { size: 70mm 40mm; margin: 0; }');
+    const pageStyle = labelPrintPageStyle({ width: 70, height: 40 });
+    expect(pageStyle).toContain('@page { size: 70mm 40mm; margin: 0; }');
+    expect(pageStyle).toContain('width: 70mm !important; height: 40mm !important;');
+    expect(pageStyle).toContain('min-width: 0 !important; min-height: 0 !important;');
   });
 
   it('aggregates matching products and recalculates recipe totals', () => {

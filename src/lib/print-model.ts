@@ -71,7 +71,7 @@ export function labelPrintPageMetrics(config: Pick<LabelConfig, 'width' | 'heigh
 export function labelPrintPageStyle(config: Pick<LabelConfig, 'width' | 'height'>): string {
   const page = labelPrintPageMetrics(config);
   const size = `${page.widthMm}mm ${page.heightMm}mm`;
-  return `@page { size: ${size}; margin: 0; } @page label-sheet-page { size: ${size}; margin: 0; } html, body { margin: 0 !important; padding: 0 !important; }`;
+  return `@page { size: ${size}; margin: 0; } @page label-sheet-page { size: ${size}; margin: 0; } html, body { width: ${page.widthMm}mm !important; height: ${page.heightMm}mm !important; min-width: 0 !important; min-height: 0 !important; margin: 0 !important; padding: 0 !important; }`;
 }
 
 export type DateFilterMode = 'all' | 'exact' | 'range' | 'offset';
