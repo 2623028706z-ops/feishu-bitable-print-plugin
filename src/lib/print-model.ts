@@ -23,9 +23,12 @@ export type PrintOrder = {
   issues: PrintIssue[];
 };
 
+export type LabelRotation = 0 | 90 | 180 | 270;
+
 export type LabelConfig = {
   width: number;
   height: number;
+  printRotation: LabelRotation;
   columns: number;
   rows: number;
   gapX: number;
@@ -76,6 +79,27 @@ export function labelPrintPageStyle(config: Pick<LabelConfig, 'width' | 'height'
   return `@page { size: ${size}; margin: 0; } html, body { margin: 0 !important; padding: 0 !important; }`;
 }
 
+/**
+ * 物理纸张始终 = width×height（@page 尺寸不变）。内容在纸内按 printRotation 旋转，
+ * 用来抵消标签机送纸方向造成的 90°/180° 错位。
+ * 90°/270° 时卡片按「交换后的宽高」布局，再旋转填满物理纸张，避免内容溢出。
+ */
+export function labelPrintLayout(config: Pick<LabelConfig, 'width' | 'height' | 'printRotation'>) {
+  const pageW = config.width;
+  const pageH = config.height;
+  const rotation = ((config.printRotation ?? 0) % 360) as LabelRotation;
+  if (rotation === 90 || rotation === 270) {
+    const cardW = pageH;
+    const cardH = pageW;
+    const transform = rotation === 90
+      ? `translateX(${pageW}mm) rotate(90deg)`
+      : `translateY(${pageH}mm) rotate(270deg)`;
+    return { pageW, pageH, cardW, cardH, transform, rotation };
+  }
+  const transform = rotation === 180 ? `translate(${pageW}mm, ${pageH}mm) rotate(180deg)` : 'none';
+  return { pageW, pageH, cardW: pageW, cardH: pageH, transform, rotation };
+}
+
 export type DateFilterMode = 'all' | 'exact' | 'range' | 'offset';
 
 export type PrintFilter = {
@@ -109,6 +133,7 @@ export const defaultPrintFilter: PrintFilter = {
 export const defaultLabelConfig: LabelConfig = {
   width: 50,
   height: 30,
+  printRotation: 0,
   columns: 1,
   rows: 1,
   gapX: 0,

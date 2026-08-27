@@ -195,6 +195,9 @@ button:focus-visible, input:focus-visible, select:focus-visible {
 /* ── Label sheet (print artifact) ─────────────────────── */
 .label-sheet { width: var(--sheet-width); height: var(--sheet-height); max-width: var(--sheet-width); max-height: var(--sheet-height); padding: var(--margin-y) var(--margin-x); display: grid; grid-template-columns: repeat(var(--label-columns), var(--label-width)); grid-template-rows: repeat(var(--label-rows), var(--label-height)); gap: var(--gap-y) var(--gap-x); align-content: start; overflow: hidden; }
 .label-page-break { page-break-after: always; break-after: page; }
+/* 打印旋转：sheet 固定物理纸张尺寸做裁剪框，card 按交换后宽高绝对定位再旋转填满 */
+.label-sheet-rotated { position: relative; display: block; padding: 0; }
+.label-sheet-rotated .label-card { position: absolute; top: 0; left: 0; transform-origin: top left; transform: var(--label-rotate); }
 .label-card {
   position: relative; width: var(--label-width); height: var(--label-height);
   border: .25mm solid #26312c; border-radius: 1mm;
