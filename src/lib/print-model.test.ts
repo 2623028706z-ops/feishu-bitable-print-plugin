@@ -35,6 +35,7 @@ describe('print model', () => {
     expect(pageStyle).toContain('@page { size: 70mm 40mm; margin: 0; }');
     expect(pageStyle).toContain('width: 70mm !important; height: 40mm !important;');
     expect(pageStyle).toContain('min-width: 0 !important; min-height: 0 !important;');
+    expect(pageStyle).toContain('.label-sheet { width: 70mm !important; min-width: 70mm !important; max-width: 70mm !important; height: 40mm !important; min-height: 40mm !important; max-height: 40mm !important; box-sizing: border-box !important; }');
   });
 
   it('aggregates matching products and recalculates recipe totals', () => {

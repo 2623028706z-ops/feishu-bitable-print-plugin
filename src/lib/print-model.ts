@@ -70,8 +70,19 @@ export function labelPrintPageMetrics(config: Pick<LabelConfig, 'width' | 'heigh
 
 export function labelPrintPageStyle(config: Pick<LabelConfig, 'width' | 'height'>): string {
   const page = labelPrintPageMetrics(config);
-  const size = `${page.widthMm}mm ${page.heightMm}mm`;
-  return `@page { size: ${size}; margin: 0; } @page label-sheet-page { size: ${size}; margin: 0; } html, body { width: ${page.widthMm}mm !important; height: ${page.heightMm}mm !important; min-width: 0 !important; min-height: 0 !important; margin: 0 !important; padding: 0 !important; }`;
+  const width = `${page.widthMm}mm`;
+  const height = `${page.heightMm}mm`;
+  const size = `${width} ${height}`;
+  // The application body has a desktop min-width. Reset it in the print
+  // document and lock the sheet itself to the physical label size so the
+  // browser cannot scale a small label to fit the UI viewport.
+  return [
+    `@page { size: ${size}; margin: 0; }`,
+    `@page label-sheet-page { size: ${size}; margin: 0; }`,
+    `html, body { width: ${width} !important; height: ${height} !important; min-width: 0 !important; min-height: 0 !important; margin: 0 !important; padding: 0 !important; overflow: visible !important; }`,
+    `.label-sheet { width: ${width} !important; min-width: ${width} !important; max-width: ${width} !important; height: ${height} !important; min-height: ${height} !important; max-height: ${height} !important; box-sizing: border-box !important; }`,
+    `.label-card { width: ${width} !important; height: ${height} !important; box-sizing: border-box !important; }`,
+  ].join(' ');
 }
 
 export type DateFilterMode = 'all' | 'exact' | 'range' | 'offset';
