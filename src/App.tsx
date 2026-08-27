@@ -219,7 +219,7 @@ export default function App() {
     return () => {
       if (style.isConnected) style.remove();
     };
-  }, [mode, config.width, config.height]);
+  }, [mode, config.width, config.height, config.printRotation]);
 
   const customers = useMemo(() => [...new Set(orders.map((order) => order.customer).filter(Boolean))].sort(), [orders]);
   const categories = useMemo(() => [...new Set(orders.flatMap((order) => splitCategoryValues(order.category)))].sort(), [orders]);

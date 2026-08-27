@@ -34,13 +34,21 @@ describe('print model', () => {
     expect(labelPrintPageStyle({ width: 70, height: 40 })).toContain('@page { size: 70mm 40mm; margin: 0; }');
   });
 
-  it('rotates label content inside a fixed physical page', () => {
-    // 物理纸张恒定 50×30；0°/180° card 保持 50×30，90°/270° 交换成 30×50 再旋转填满
+  it('rotates the whole card and swaps page size so content fills after printer rotation', () => {
+    // card 恒为设计尺寸 50×30 铺满内容；90°/270° 时页面(@page)交换成竖版 30×50，
+    // 整张 card 旋转后填满交换后的页面，打印机再转回来 = 50×30 横排铺满
     const base = { width: 50, height: 30 };
     expect(labelPrintLayout({ ...base, printRotation: 0 })).toMatchObject({ pageW: 50, pageH: 30, cardW: 50, cardH: 30, transform: 'none' });
     expect(labelPrintLayout({ ...base, printRotation: 180 })).toMatchObject({ pageW: 50, pageH: 30, cardW: 50, cardH: 30, transform: 'translate(50mm, 30mm) rotate(180deg)' });
-    expect(labelPrintLayout({ ...base, printRotation: 90 })).toMatchObject({ pageW: 50, pageH: 30, cardW: 30, cardH: 50, transform: 'translateX(50mm) rotate(90deg)' });
-    expect(labelPrintLayout({ ...base, printRotation: 270 })).toMatchObject({ pageW: 50, pageH: 30, cardW: 30, cardH: 50, transform: 'translateY(30mm) rotate(270deg)' });
+    expect(labelPrintLayout({ ...base, printRotation: 90 })).toMatchObject({ pageW: 30, pageH: 50, cardW: 50, cardH: 30, transform: 'translateX(30mm) rotate(90deg)' });
+    expect(labelPrintLayout({ ...base, printRotation: 270 })).toMatchObject({ pageW: 30, pageH: 50, cardW: 50, cardH: 30, transform: 'translateY(50mm) rotate(270deg)' });
+  });
+
+  it('swaps @page size to portrait for 90/270 so the printer receives the rotated page', () => {
+    expect(labelPrintPageStyle({ width: 50, height: 30, printRotation: 0 })).toContain('@page { size: 50mm 30mm; margin: 0; }');
+    expect(labelPrintPageStyle({ width: 50, height: 30, printRotation: 90 })).toContain('@page { size: 30mm 50mm; margin: 0; }');
+    expect(labelPrintPageStyle({ width: 50, height: 30, printRotation: 270 })).toContain('@page { size: 30mm 50mm; margin: 0; }');
+    expect(labelPrintPageStyle({ width: 50, height: 30, printRotation: 180 })).toContain('@page { size: 50mm 30mm; margin: 0; }');
   });
 
   it('aggregates matching products and recalculates recipe totals', () => {

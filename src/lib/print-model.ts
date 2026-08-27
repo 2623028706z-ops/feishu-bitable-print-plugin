@@ -71,33 +71,36 @@ export function labelPrintPageMetrics(config: Pick<LabelConfig, 'width' | 'heigh
   } as const;
 }
 
-export function labelPrintPageStyle(config: Pick<LabelConfig, 'width' | 'height'>): string {
-  const page = labelPrintPageMetrics(config);
-  const size = `${page.widthMm}mm ${page.heightMm}mm`;
+export function labelPrintPageStyle(config: Pick<LabelConfig, 'width' | 'height'> & Partial<Pick<LabelConfig, 'printRotation'>>): string {
+  // @page 尺寸必须等于「旋转后的物理页面」：90°/270° 交换成竖版 h×w，
+  // 否则打印机拿到 50×30 页却收到竖版内容，仍会错位。
+  const layout = labelPrintLayout({ width: config.width, height: config.height, printRotation: config.printRotation ?? 0 });
+  const size = `${layout.pageW}mm ${layout.pageH}mm`;
   // 仅用匿名 @page：飞书桌面端内嵌 Chromium 对「命名 @page 里的 size」支持不全，
   // 命名页会回退成 A4 纵向，导致标签被印在一整页 A4 的角落（竖版、尺寸不对）。
   return `@page { size: ${size}; margin: 0; } html, body { margin: 0 !important; padding: 0 !important; }`;
 }
 
 /**
- * 物理纸张始终 = width×height（@page 尺寸不变）。内容在纸内按 printRotation 旋转，
- * 用来抵消标签机送纸方向造成的 90°/180° 错位。
- * 90°/270° 时卡片按「交换后的宽高」布局，再旋转填满物理纸张，避免内容溢出。
+ * 标签内容始终按 width×height 设计并铺满该 card；printRotation 把整张 card 旋转，
+ * 用来抵消标签机把页面整体转 90°/180° 造成的错位。
+ * 关键：90°/270° 时「页面(@page/sheet)尺寸」交换成 height×width（竖版），card 保持
+ * 原始 width×height 整体旋转后正好填满交换后的页面——内容不挤压、不溢出、铺满。
  */
-export function labelPrintLayout(config: Pick<LabelConfig, 'width' | 'height' | 'printRotation'>) {
-  const pageW = config.width;
-  const pageH = config.height;
+export function labelPrintLayout(config: Pick<LabelConfig, 'width' | 'height'> & Partial<Pick<LabelConfig, 'printRotation'>>) {
+  const w = config.width;
+  const h = config.height;
   const rotation = ((config.printRotation ?? 0) % 360) as LabelRotation;
+  // card 恒为设计尺寸 w×h，模板元素在其中正常铺满
   if (rotation === 90 || rotation === 270) {
-    const cardW = pageH;
-    const cardH = pageW;
     const transform = rotation === 90
-      ? `translateX(${pageW}mm) rotate(90deg)`
-      : `translateY(${pageH}mm) rotate(270deg)`;
-    return { pageW, pageH, cardW, cardH, transform, rotation };
+      ? `translateX(${h}mm) rotate(90deg)`
+      : `translateY(${w}mm) rotate(270deg)`;
+    // 页面交换成竖版 h×w
+    return { pageW: h, pageH: w, cardW: w, cardH: h, transform, rotation };
   }
-  const transform = rotation === 180 ? `translate(${pageW}mm, ${pageH}mm) rotate(180deg)` : 'none';
-  return { pageW, pageH, cardW: pageW, cardH: pageH, transform, rotation };
+  const transform = rotation === 180 ? `translate(${w}mm, ${h}mm) rotate(180deg)` : 'none';
+  return { pageW: w, pageH: h, cardW: w, cardH: h, transform, rotation };
 }
 
 export type DateFilterMode = 'all' | 'exact' | 'range' | 'offset';
