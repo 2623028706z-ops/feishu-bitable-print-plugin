@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { adjustPrintDate, aggregateOrders, applyQuantityFilter, defaultLabelConfig, defaultPrintFilter, expandLabelCopies, filterOrders, formatSelectedDateRange, groupOrdersForWorkOrders, labelPrintPageMetrics, labelPrintPageStyle, sampleOrders, splitCategoryValues } from './print-model';
+import { adjustPrintDate, aggregateOrders, applyQuantityFilter, defaultLabelConfig, defaultPrintFilter, expandLabelCopies, filterOrders, formatSelectedDateRange, groupOrdersForWorkOrders, labelPrintLayout, labelPrintPageMetrics, labelPrintPageStyle, sampleOrders, splitCategoryValues } from './print-model';
 
 describe('print model', () => {
   it('adjusts only the label date with T plus n', () => {
@@ -36,6 +36,15 @@ describe('print model', () => {
     expect(pageStyle).toContain('width: 70mm !important; height: 40mm !important;');
     expect(pageStyle).toContain('min-width: 0 !important; min-height: 0 !important;');
     expect(pageStyle).toContain('.label-sheet { width: 70mm !important; min-width: 70mm !important; max-width: 70mm !important; height: 40mm !important; min-height: 40mm !important; max-height: 40mm !important; box-sizing: border-box !important; }');
+  });
+
+  it('rotates label content inside a fixed physical page', () => {
+    // 物理纸张恒定 50×30；0°/180° card 保持 50×30，90°/270° 交换成 30×50 再旋转填满
+    const base = { width: 50, height: 30 };
+    expect(labelPrintLayout({ ...base, printRotation: 0 })).toMatchObject({ pageW: 50, pageH: 30, cardW: 50, cardH: 30, transform: 'none' });
+    expect(labelPrintLayout({ ...base, printRotation: 180 })).toMatchObject({ pageW: 50, pageH: 30, cardW: 50, cardH: 30, transform: 'translate(50mm, 30mm) rotate(180deg)' });
+    expect(labelPrintLayout({ ...base, printRotation: 90 })).toMatchObject({ pageW: 50, pageH: 30, cardW: 30, cardH: 50, transform: 'translateX(50mm) rotate(90deg)' });
+    expect(labelPrintLayout({ ...base, printRotation: 270 })).toMatchObject({ pageW: 50, pageH: 30, cardW: 30, cardH: 50, transform: 'translateY(30mm) rotate(270deg)' });
   });
 
   it('aggregates matching products and recalculates recipe totals', () => {
