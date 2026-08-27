@@ -233,6 +233,68 @@ describe('feishu link value parsing', () => {
     expect(result.orders[0].issues).not.toContain('missing-code');
   });
 
+  it('reads recipe material after 花材名称→配方花材名称 rename and dropped 规格 column', async () => {
+    const salesTable = {
+      id: 'tbl_sales_renamed_material',
+      getName: vi.fn().mockResolvedValue('花众销售订单汇总表'),
+      getFieldMetaList: vi.fn().mockResolvedValue([
+        { id: 'fld_code', name: '成品编码' },
+        { id: 'fld_product', name: '成品名称', property: { tableId: 'tbl_products' } },
+        { id: 'fld_quantity', name: '销售数量（扎）' },
+      ]),
+      getViewById: vi.fn().mockResolvedValue({
+        getSelectedRecordIdList: vi.fn().mockResolvedValue([]),
+        getName: vi.fn().mockResolvedValue('今日出货'),
+      }),
+      getRecordsByPage: vi.fn().mockResolvedValue({
+        records: [{
+          recordId: 'rec_renamed_material',
+          fields: {
+            fld_code: 'CP-002',
+            fld_product: { text: '云间甜梦', recordIds: ['rec_product_1'] },
+            fld_quantity: 2,
+          },
+        }],
+      }),
+    };
+    const productTable = {
+      getFieldMetaList: vi.fn().mockResolvedValue([
+        { id: 'p_name', name: '成品名称' },
+        { id: 'p_recipe', name: '成品配方', property: { tableId: 'tbl_recipe' } },
+      ]),
+      getRecordsByIds: vi.fn().mockResolvedValue([
+        { fields: { p_name: '云间甜梦', p_recipe: { recordIds: ['rec_recipe_1'] } } },
+      ]),
+    };
+    const recipeTable = {
+      getFieldMetaList: vi.fn().mockResolvedValue([
+        { id: 'r_material', name: '配方花材名称' },
+        { id: 'r_stems', name: '花材用量（枝数）' },
+        { id: 'r_note', name: '采购备注' },
+      ]),
+      getRecordsByIds: vi.fn().mockResolvedValue([
+        { fields: { r_material: '向日葵', r_stems: 5, r_note: 'B级' } },
+      ]),
+    };
+
+    vi.mocked(base.getActiveTable).mockResolvedValue(salesTable as never);
+    vi.mocked(base.getSelection).mockResolvedValue({
+      tableId: 'tbl_other', viewId: 'view_today', recordId: null, fieldId: null, baseId: 'base',
+    });
+    vi.mocked(base.getTableById).mockImplementation(async (tableId) => {
+      if (tableId === 'tbl_products') return productTable as never;
+      if (tableId === 'tbl_recipe') return recipeTable as never;
+      throw new Error(`unexpected table ${tableId}`);
+    });
+
+    const result = await loadFeishuOrders();
+
+    expect(result.orders[0].recipe).toEqual([
+      { material: '向日葵', stemsPerBunch: 5, unit: '支', totalStems: 10, note: 'B级' },
+    ]);
+    expect(result.orders[0].issues).not.toContain('missing-recipe');
+  });
+
   it('prefers a direct sales-order recipe link when present', async () => {
     const directSalesTable = {
       id: 'tbl_sales_direct',

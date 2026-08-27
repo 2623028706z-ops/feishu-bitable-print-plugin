@@ -22,7 +22,7 @@ const FIELD_ALIASES = {
   note: ['备注'],
   recipeText: ['配方明细'],
   recipeLink: ['配方', '成品配方'],
-  material: ['花材名称', '花材'],
+  material: ['配方花材名称', '花材名称', '花材'],
   stems: ['花材用量（枝数）', '支数'],
   unit: ['规格', '单位'],
   recipeNote: ['采购备注', '装箱备注'],
