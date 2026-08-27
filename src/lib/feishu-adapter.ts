@@ -13,7 +13,7 @@ type LinkedRecordGroup = { tableId: string; recordIds: string[] };
 const FIELD_ALIASES = {
   orderNo: ['订单编号'],
   shipDate: ['出货日期'],
-  productCode: ['花束编码', '花束编码数值', '编码数值', '花束编码（数值）'],
+  productCode: ['成品编码', '花束编码', '花束编码数值', '编码数值', '花束编码（数值）', '成品编码数值', '商品编码', '产品编码'],
   customer: ['客户名称', '客户'],
   category: ['品类', '类别', '花束品类', '品类名称', '商品品类', '花束类别', '商品分类', '花束分类', '产品分类', '产品品类', '分类'],
   careInstructions: ['养护说明'],

@@ -193,6 +193,46 @@ describe('feishu link value parsing', () => {
     expect(result.orders[0].category).toBe('鲜花花束、礼盒');
   });
 
+  it('reads the product code when the sales column was renamed to 成品编码', async () => {
+    const salesTable = {
+      id: 'tbl_sales_renamed_code',
+      getName: vi.fn().mockResolvedValue('花众销售订单汇总表'),
+      getFieldMetaList: vi.fn().mockResolvedValue([
+        { id: 'fld_code', name: '成品编码' },
+        { id: 'fld_product', name: '成品名称' },
+        { id: 'fld_quantity', name: '销售数量（扎）' },
+      ]),
+      getViewById: vi.fn().mockResolvedValue({
+        getSelectedRecordIdList: vi.fn().mockResolvedValue([]),
+        getName: vi.fn().mockResolvedValue('今日出货'),
+      }),
+      getRecordsByPage: vi.fn().mockResolvedValue({
+        records: [{
+          recordId: 'rec_renamed_code',
+          fields: {
+            fld_code: 'CP-001',
+            fld_product: '云间甜梦',
+            fld_quantity: 3,
+          },
+        }],
+      }),
+    };
+
+    vi.mocked(base.getActiveTable).mockResolvedValue(salesTable as never);
+    vi.mocked(base.getSelection).mockResolvedValue({
+      tableId: 'tbl_other',
+      viewId: 'view_today',
+      recordId: null,
+      fieldId: null,
+      baseId: 'base',
+    });
+
+    const result = await loadFeishuOrders();
+
+    expect(result.orders[0].productCode).toBe('CP-001');
+    expect(result.orders[0].issues).not.toContain('missing-code');
+  });
+
   it('prefers a direct sales-order recipe link when present', async () => {
     const directSalesTable = {
       id: 'tbl_sales_direct',
