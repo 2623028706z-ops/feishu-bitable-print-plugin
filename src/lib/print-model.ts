@@ -71,42 +71,43 @@ export function labelPrintPageMetrics(config: Pick<LabelConfig, 'width' | 'heigh
   } as const;
 }
 
-export function labelPrintPageStyle(config: Pick<LabelConfig, 'width' | 'height'>): string {
-  const page = labelPrintPageMetrics(config);
-  const width = `${page.widthMm}mm`;
-  const height = `${page.heightMm}mm`;
+export function labelPrintPageStyle(config: Pick<LabelConfig, 'width' | 'height'> & Partial<Pick<LabelConfig, 'printRotation'>>): string {
+  // @page uses the rotated physical page. The root and sheet are also locked
+  // to millimetres so the app viewport's desktop min-width cannot shrink it.
+  const layout = labelPrintLayout({ width: config.width, height: config.height, printRotation: config.printRotation ?? 0 });
+  const width = `${layout.pageW}mm`;
+  const height = `${layout.pageH}mm`;
+  const cardWidth = `${layout.cardW}mm`;
+  const cardHeight = `${layout.cardH}mm`;
   const size = `${width} ${height}`;
-  // The application body has a desktop min-width. Reset it in the print
-  // document and lock the sheet itself to the physical label size so the
-  // browser cannot scale a small label to fit the UI viewport.
   return [
     `@page { size: ${size}; margin: 0; }`,
-    `@page label-sheet-page { size: ${size}; margin: 0; }`,
     `html, body { width: ${width} !important; height: ${height} !important; min-width: 0 !important; min-height: 0 !important; margin: 0 !important; padding: 0 !important; overflow: visible !important; }`,
     `.label-sheet { width: ${width} !important; min-width: ${width} !important; max-width: ${width} !important; height: ${height} !important; min-height: ${height} !important; max-height: ${height} !important; box-sizing: border-box !important; }`,
-    `.label-card { width: ${width} !important; height: ${height} !important; box-sizing: border-box !important; }`,
+    `.label-card { width: ${cardWidth} !important; height: ${cardHeight} !important; box-sizing: border-box !important; }`,
   ].join(' ');
 }
 
 /**
- * 物理纸张始终 = width×height（@page 尺寸不变）。内容在纸内按 printRotation 旋转，
- * 用来抵消标签机送纸方向造成的 90°/180° 错位。
- * 90°/270° 时卡片按「交换后的宽高」布局，再旋转填满物理纸张，避免内容溢出。
+ * 标签内容始终按 width×height 设计并铺满该 card；printRotation 把整张 card 旋转，
+ * 用来抵消标签机把页面整体转 90°/180° 造成的错位。
+ * 关键：90°/270° 时「页面(@page/sheet)尺寸」交换成 height×width（竖版），card 保持
+ * 原始 width×height 整体旋转后正好填满交换后的页面——内容不挤压、不溢出、铺满。
  */
-export function labelPrintLayout(config: Pick<LabelConfig, 'width' | 'height' | 'printRotation'>) {
-  const pageW = config.width;
-  const pageH = config.height;
+export function labelPrintLayout(config: Pick<LabelConfig, 'width' | 'height'> & Partial<Pick<LabelConfig, 'printRotation'>>) {
+  const w = config.width;
+  const h = config.height;
   const rotation = ((config.printRotation ?? 0) % 360) as LabelRotation;
+  // card 恒为设计尺寸 w×h，模板元素在其中正常铺满
   if (rotation === 90 || rotation === 270) {
-    const cardW = pageH;
-    const cardH = pageW;
     const transform = rotation === 90
-      ? `translateX(${pageW}mm) rotate(90deg)`
-      : `translateY(${pageH}mm) rotate(270deg)`;
-    return { pageW, pageH, cardW, cardH, transform, rotation };
+      ? `translateX(${h}mm) rotate(90deg)`
+      : `translateY(${w}mm) rotate(270deg)`;
+    // 页面交换成竖版 h×w
+    return { pageW: h, pageH: w, cardW: w, cardH: h, transform, rotation };
   }
-  const transform = rotation === 180 ? `translate(${pageW}mm, ${pageH}mm) rotate(180deg)` : 'none';
-  return { pageW, pageH, cardW: pageW, cardH: pageH, transform, rotation };
+  const transform = rotation === 180 ? `translate(${w}mm, ${h}mm) rotate(180deg)` : 'none';
+  return { pageW: w, pageH: h, cardW: w, cardH: h, transform, rotation };
 }
 
 export type DateFilterMode = 'all' | 'exact' | 'range' | 'offset';
