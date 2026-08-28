@@ -55,6 +55,11 @@ describe('print model', () => {
     expect(labelPrintPageStyle({ width: 50, height: 30, printRotation: 180 })).toContain('@page { size: 50mm 30mm; margin: 0; }');
   });
 
+  it('emits a concrete card size for each rotation so print iframes do not depend on CSS variables', () => {
+    expect(labelPrintPageStyle({ width: 50, height: 30, printRotation: 90 })).toContain('.label-card { width: 50mm !important; height: 30mm !important;');
+    expect(labelPrintPageStyle({ width: 50, height: 30, printRotation: 270 })).toContain('.label-card { width: 50mm !important; height: 30mm !important;');
+  });
+
   it('aggregates matching products and recalculates recipe totals', () => {
     const duplicate = { ...sampleOrders[0], recordId: 'sample-copy', quantity: 3, recipe: sampleOrders[0].recipe.map((line) => ({ ...line, totalStems: line.stemsPerBunch * 3 })) };
     const grouped = aggregateOrders([sampleOrders[0], duplicate]);
