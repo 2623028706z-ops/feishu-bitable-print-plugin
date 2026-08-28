@@ -151,6 +151,7 @@ button:focus-visible, input:focus-visible, select:focus-visible {
 .empty-status span { display: inline-grid; place-items: center; width: 18px; height: 18px; margin-right: 5px; border-radius: 50%; background: var(--surface); color: var(--muted); }
 .issue-box { color: var(--amber); background: var(--amber-soft); }
 .issue-box strong { display: block; font-size: 11px; margin-bottom: 2px; }
+.issue-columns { margin-top: 6px; padding-top: 6px; border-top: 1px dashed currentColor; font-size: 10.5px; opacity: .85; word-break: break-all; }
 .error-text { color: var(--rose); font-size: 11px; line-height: 1.4; }
 
 .primary-button, .secondary-button { width: 100%; min-height: 44px; height: 44px; border-radius: var(--radius-sm); display: flex; align-items: center; justify-content: center; gap: 8px; font-size: 13px; transition: background .18s, border-color .18s, transform .1s; }
@@ -281,7 +282,8 @@ button:focus-visible, input:focus-visible, select:focus-visible {
     border: 0; box-shadow: none; background: white; overflow: visible;
   }
   .print-surface { box-shadow: none; margin: 0; }
-  .label-sheet { display: grid !important; box-sizing: border-box; break-inside: avoid; page-break-inside: avoid; }
+  .label-sheet:not(.label-sheet-rotated) { display: grid !important; box-sizing: border-box; break-inside: avoid; page-break-inside: avoid; }
+  .label-sheet-rotated { display: block !important; box-sizing: border-box; break-inside: avoid; page-break-inside: avoid; }
   .label-card { break-inside: avoid; page-break-inside: avoid; }
   .work-order-document { break-after: page; }
 }

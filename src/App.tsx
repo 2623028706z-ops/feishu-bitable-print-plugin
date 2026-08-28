@@ -9,7 +9,7 @@ import { adjustPrintDate, defaultLabelConfig, defaultPrintFilter, expandLabelCop
 import { loadFeishuOrders } from './lib/feishu-adapter';
 import { SearchMultiSelect } from './features/filters/SearchMultiSelect';
 const LabelLayoutEditor = lazy(() => import('./features/templates/LabelLayoutEditor').then((module) => ({ default: module.LabelLayoutEditor })));
-import { migrateTemplateConfig, type LabelTemplate } from './domain/templates';
+import { migrateTemplateConfig, resizeLabelTemplateForPaper, type LabelTemplate } from './domain/templates';
 import { clampFixedCopies, limitPreviewItems, MAX_TOTAL_PRINT_ITEMS, validatePrintTotal } from './domain/print-safety';
 import { WorkOrderEditor } from './features/work-order/WorkOrderEditor';
 import { WorkOrderPrintDocument, createDefaultWorkOrderTemplate, type WorkOrderRegion, type WorkOrderTemplate } from './features/print/WorkOrderPrintDocument';
@@ -41,8 +41,10 @@ function readMemory<T>(key: string, fallback: T): T {
 
 function readLabelConfigMemory(): LabelConfig {
   const stored = readMemory(CONFIG_STORAGE_KEY, defaultLabelConfig);
+  const printRotation = [0, 90, 180, 270].includes(Number(stored.printRotation)) ? Number(stored.printRotation) as LabelRotation : 0;
   const isLegacySheetDefault = stored.columns === 2 && stored.rows === 8 && stored.gapX === 2 && stored.gapY === 2 && stored.marginX === 5 && stored.marginY === 5;
-  return isLegacySheetDefault ? { ...stored, columns: 1, rows: 1, gapX: 0, gapY: 0, marginX: 0, marginY: 0 } : stored;
+  const normalized = { ...stored, printRotation };
+  return isLegacySheetDefault ? { ...normalized, columns: 1, rows: 1, gapX: 0, gapY: 0, marginX: 0, marginY: 0 } : normalized;
 }
 
 function templateFromConfig(config: LabelConfig, current: LabelTemplate): LabelTemplate {
@@ -161,13 +163,18 @@ export default function App() {
     storageSet(CONFIG_STORAGE_KEY, JSON.stringify(next));
     return next;
   }), []);
-  const setLabelOrientation = useCallback((orientation: 'landscape' | 'portrait') => setConfig((current) => {
-    const isLandscape = current.width >= current.height;
-    if ((orientation === 'landscape') === isLandscape) return current;
-    const next = { ...current, width: current.height, height: current.width };
+  const setLabelOrientation = useCallback((orientation: 'landscape' | 'portrait') => {
+    const isLandscape = config.width >= config.height;
+    const wantsLandscape = orientation === 'landscape';
+    const next = wantsLandscape === isLandscape
+      ? { ...config, printRotation: 0 as const }
+      : { ...config, width: config.height, height: config.width, printRotation: 0 as const };
+    if (next.width !== config.width || next.height !== config.height) {
+      setLabelTemplate((current) => resizeLabelTemplateForPaper(current, next.width, next.height));
+    }
     storageSet(CONFIG_STORAGE_KEY, JSON.stringify(next));
-    return next;
-  }), []);
+    setConfig(next);
+  }, [config]);
 
   useEffect(() => { setLabelTemplate((current) => templateFromConfig(config, current)); }, [config]);
   useEffect(() => { storageSet(LABEL_TEMPLATE_STORAGE_KEY, JSON.stringify(labelTemplate)); }, [labelTemplate]);

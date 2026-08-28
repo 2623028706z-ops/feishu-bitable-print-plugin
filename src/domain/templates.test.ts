@@ -6,6 +6,7 @@ import {
   migrateTemplateConfig,
   validateA4Columns,
   clampLabelElementToBounds,
+  resizeLabelTemplateForPaper,
 } from './templates';
 
 describe('versioned print templates', () => {
@@ -75,5 +76,13 @@ describe('versioned print templates', () => {
     const migrated = migrateTemplateConfig({ elements: [{ id: 'customer', kind: 'customer', x: 0, y: 0, width: 10, height: 4, visible: true, align: 'right' }] }, 'label');
     expect(migrated.elements[0].align).toBe('right');
     expect(migrated.elements[0].textAlign).toBe('right');
+  });
+
+  it('resizes saved label fields when paper orientation changes', () => {
+    const source = createDefaultTemplate('label');
+    const resized = resizeLabelTemplateForPaper(source, 30, 50);
+    expect(resized.paper).toEqual({ widthMm: 30, heightMm: 50 });
+    expect(resized.elements.every((element) => element.x >= 0 && element.y >= 0 && element.x + element.width <= 30 && element.y + element.height <= 50)).toBe(true);
+    expect(resized.elements.find((element) => element.kind === 'name')?.width).toBeLessThan(source.elements.find((element) => element.kind === 'name')?.width ?? 0);
   });
 });

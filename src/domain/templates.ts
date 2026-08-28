@@ -130,6 +130,37 @@ export function clampLabelElementToBounds(element: LabelElement, template: Label
   return { ...element, x, y, width: widthMm, height: heightMm, visible: element.visible !== false };
 }
 
+/**
+ * Resizes a saved label layout when switching between portrait and landscape.
+ * A uniform scale keeps text horizontal and prevents migrate/clamp from
+ * collapsing fields into the narrower side of the new paper.
+ */
+export function resizeLabelTemplateForPaper(template: LabelTemplate, widthMm: number, heightMm: number): LabelTemplate {
+  const oldWidth = Math.max(1, template.paper.widthMm);
+  const oldHeight = Math.max(1, template.paper.heightMm);
+  const width = Math.max(5, widthMm);
+  const height = Math.max(5, heightMm);
+  const scale = Math.min(width / oldWidth, height / oldHeight);
+  const offsetX = (width - oldWidth * scale) / 2;
+  const offsetY = (height - oldHeight * scale) / 2;
+  const next = {
+    ...template,
+    paper: { widthMm: width, heightMm: height },
+    width,
+    height,
+    elements: template.elements.map((element) => clampLabelElementToBounds({
+      ...element,
+      x: element.x * scale + offsetX,
+      y: element.y * scale + offsetY,
+      width: element.width * scale,
+      height: element.height * scale,
+      fontSizeMm: element.fontSizeMm == null ? element.fontSizeMm : element.fontSizeMm * scale,
+      fontSize: element.fontSize == null ? element.fontSize : element.fontSize * scale,
+    }, { ...template, paper: { widthMm: width, heightMm: height } })),
+  };
+  return next;
+}
+
 export function validateA4Columns(columns: A4Column[]): { valid: boolean; missing: string[] } {
   const ids = new Set(columns.filter((column) => column.visible !== false).map((column) => column.id));
   const missing = A4_REQUIRED_COLUMN_IDS.filter((id) => !ids.has(id));
