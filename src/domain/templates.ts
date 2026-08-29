@@ -1,4 +1,4 @@
-export const CURRENT_TEMPLATE_VERSION = 1;
+export const CURRENT_TEMPLATE_VERSION = 2;
 
 export const A4_REQUIRED_COLUMN_IDS = ['bouquet', 'material', 'bunchQuantity', 'stemsPerBunch', 'totalStems', 'note'] as const;
 export type TemplateType = 'label' | 'a4';
@@ -140,13 +140,11 @@ export function resizeLabelTemplateForPaper(template: LabelTemplate, widthMm: nu
   const oldHeight = Math.max(1, template.paper.heightMm);
   const width = Math.max(5, widthMm);
   const height = Math.max(5, heightMm);
-  const swappedOrientation = Math.abs(width - oldHeight) < 0.01 && Math.abs(height - oldWidth) < 0.01;
-  // Orientation changes should not progressively shrink a saved template.
-  // Keep typography and field rectangles stable; clamp only what falls out
-  // of the new paper bounds.
-  const scale = swappedOrientation ? 1 : Math.min(width / oldWidth, height / oldHeight);
-  const offsetX = (width - oldWidth * scale) / 2;
-  const offsetY = (height - oldHeight * scale) / 2;
+  // Scale each axis independently. This is reversible for arbitrary paper
+  // sizes and does not shrink typography, so an orientation round-trip restores
+  // the original field rectangles instead of persisting a clipped width.
+  const scaleX = width / oldWidth;
+  const scaleY = height / oldHeight;
   const next = {
     ...template,
     paper: { widthMm: width, heightMm: height },
@@ -154,12 +152,10 @@ export function resizeLabelTemplateForPaper(template: LabelTemplate, widthMm: nu
     height,
     elements: template.elements.map((element) => clampLabelElementToBounds({
       ...element,
-      x: element.x * scale + offsetX,
-      y: element.y * scale + offsetY,
-      width: element.width * scale,
-      height: element.height * scale,
-      fontSizeMm: element.fontSizeMm == null ? element.fontSizeMm : element.fontSizeMm * scale,
-      fontSize: element.fontSize == null ? element.fontSize : element.fontSize * scale,
+      x: element.x * scaleX,
+      y: element.y * scaleY,
+      width: element.width * scaleX,
+      height: element.height * scaleY,
     }, { ...template, paper: { widthMm: width, heightMm: height } })),
   };
   return next;
@@ -176,11 +172,48 @@ function numberValue(value: unknown, fallback: number, min = 0): number {
   return Number.isFinite(parsed) ? Math.max(min, parsed) : fallback;
 }
 
+function repairLegacyShrunkDefault(source: Record<string, any>, base: LabelTemplate, width: number, height: number): Record<string, any> {
+  if (numberValue(source.version, 0) >= CURRENT_TEMPLATE_VERSION || !Array.isArray(source.elements)) return source;
+  const pairs = base.elements.map((defaultElement) => {
+    const saved = source.elements.find((element: any) => element?.id === defaultElement.id || element?.kind === defaultElement.kind);
+    return saved ? { saved, defaultElement } : null;
+  });
+  if (pairs.some((pair) => !pair)) return source;
+  const ratios = pairs.flatMap((pair) => pair ? [
+    Number(pair.saved.width) / pair.defaultElement.width,
+    Number(pair.saved.height) / pair.defaultElement.height,
+  ] : []);
+  const shrinkFactor = [0.6, 0.36, 0.216, 0.1296].find((factor) => ratios.every((ratio) => Number.isFinite(ratio) && Math.abs(ratio - factor) < 0.015));
+  if (!shrinkFactor) return source;
+
+  const restored = resizeLabelTemplateForPaper(base, width, height);
+  const savedFontSize = Number(source.styles?.fontSize ?? source.fontSize);
+  const fontSize = Number.isFinite(savedFontSize) && Math.abs(savedFontSize - base.fontSize * shrinkFactor) < 0.15
+    ? base.fontSize
+    : numberValue(source.styles?.fontSize ?? source.fontSize, base.fontSize, 1);
+  return {
+    ...source,
+    elements: restored.elements.map((defaultElement) => {
+      const saved = source.elements.find((element: any) => element?.id === defaultElement.id || element?.kind === defaultElement.kind) ?? {};
+      return {
+        ...defaultElement,
+        visible: saved.visible !== false,
+        fontFamily: saved.fontFamily,
+        fontSize,
+        fontSizeMm: fontSize,
+        fontWeight: saved.fontWeight,
+        textAlign: saved.textAlign,
+        align: saved.align,
+      };
+    }),
+  };
+}
+
 export function migrateTemplateConfig(raw: unknown, type: 'label'): LabelTemplate;
 export function migrateTemplateConfig(raw: unknown, type: 'a4'): A4Template;
 export function migrateTemplateConfig(raw: unknown, type: TemplateType): PrintTemplate;
 export function migrateTemplateConfig(raw: unknown, type: TemplateType): PrintTemplate {
-  const source = raw && typeof raw === 'object' ? raw as Record<string, any> : {};
+  let source = raw && typeof raw === 'object' ? raw as Record<string, any> : {};
   const base = (type === 'label' ? labelDefaults() : a4Defaults()) as any;
   if (type === 'a4') {
     const presentation = { ...base.presentation, ...(source.presentation || {}) };
@@ -191,6 +224,7 @@ export function migrateTemplateConfig(raw: unknown, type: TemplateType): PrintTe
   }
   const width = Math.min(300, Math.max(5, numberValue(source.paper?.widthMm ?? source.width, base.width, 5)));
   const height = Math.min(300, Math.max(5, numberValue(source.paper?.heightMm ?? source.height, base.height, 5)));
+  source = repairLegacyShrunkDefault(source, base, width, height);
   const styles = { ...base.styles, ...(source.styles || {}) };
   const result: LabelTemplate = { ...base, ...source, version: CURRENT_TEMPLATE_VERSION, type: 'label', paper: { widthMm: width, heightMm: height }, grid: { ...base.grid, ...(source.grid || {}) }, elements: Array.isArray(source.elements) ? source.elements : base.elements, width, height, styles };
   result.columns = Math.min(20, Math.max(1, Math.round(numberValue(source.columns ?? result.grid.columns, base.columns, 1))));

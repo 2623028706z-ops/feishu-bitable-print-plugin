@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { adjustPrintDate, aggregateOrders, applyQuantityFilter, defaultLabelConfig, defaultPrintFilter, expandLabelCopies, filterOrders, formatSelectedDateRange, groupOrdersForWorkOrders, labelPrintLayout, labelPrintPageMetrics, labelPrintPageStyle, sampleOrders, splitCategoryValues } from './print-model';
+import { adjustPrintDate, aggregateOrders, applyQuantityFilter, defaultLabelConfig, defaultPrintFilter, expandLabelCopies, filterOrders, formatSelectedDateRange, groupOrdersForWorkOrders, labelPrintLayout, labelPrintPageMetrics, labelPrintPageStyle, normalizeLabelPrinterFeed, sampleOrders, splitCategoryValues } from './print-model';
 
 describe('print model', () => {
   it('adjusts only the label date with T plus n', () => {
@@ -31,6 +31,11 @@ describe('print model', () => {
       marginYmm: 0,
     });
     expect(labelPrintPageMetrics({ width: 40, height: 70 }).orientation).toBe('portrait');
+    expect(labelPrintPageMetrics({ width: 70, height: 40, printerFeed: 'portrait' })).toMatchObject({
+      widthMm: 40,
+      heightMm: 70,
+      orientation: 'portrait',
+    });
     const pageStyle = labelPrintPageStyle({ width: 70, height: 40 });
     expect(pageStyle).toContain('@page { size: 70mm 40mm; margin: 0; }');
     expect(pageStyle).toContain('@page label-sheet-page { size: 70mm 40mm; margin: 0; }');
@@ -41,30 +46,50 @@ describe('print model', () => {
     expect(pageStyle).toContain('.label-sheet { width: 70mm !important; min-width: 70mm !important; max-width: 70mm !important; height: 40mm !important; min-height: 40mm !important; max-height: 40mm !important; box-sizing: border-box !important; }');
   });
 
-  it('rotates the whole card and swaps page size so content fills after printer rotation', () => {
-    // card 恒为设计尺寸 50×30 铺满内容；90°/270° 时页面(@page)交换成竖版 30×50，
-    // 整张 card 旋转后填满交换后的页面，打印机再转回来 = 50×30 横排铺满
+  it('keeps design size for horizontal feed and rotates without scaling for vertical feed', () => {
     const base = { width: 50, height: 30 };
-    expect(labelPrintLayout({ ...base, printRotation: 0 })).toMatchObject({ pageW: 50, pageH: 30, cardW: 50, cardH: 30, transform: 'none' });
-    expect(labelPrintLayout({ ...base, printRotation: 180 })).toMatchObject({ pageW: 50, pageH: 30, cardW: 50, cardH: 30, transform: 'translate(50mm, 30mm) rotate(180deg)' });
-    expect(labelPrintLayout({ ...base, printRotation: 90 })).toMatchObject({ pageW: 30, pageH: 50, cardW: 50, cardH: 30, transform: 'translateX(30mm) rotate(90deg)' });
-    expect(labelPrintLayout({ ...base, printRotation: 270 })).toMatchObject({ pageW: 30, pageH: 50, cardW: 50, cardH: 30, transform: 'translateY(50mm) rotate(270deg)' });
+    expect(labelPrintLayout({ ...base, printerFeed: 'landscape' })).toMatchObject({ pageW: 50, pageH: 30, cardW: 50, cardH: 30, transform: 'none' });
+    expect(labelPrintLayout({ ...base, printerFeed: 'portrait' })).toMatchObject({ pageW: 30, pageH: 50, cardW: 50, cardH: 30, transform: 'translateX(30mm) rotate(90deg)' });
+    expect(labelPrintLayout({ width: 30, height: 50, printerFeed: 'portrait' })).toMatchObject({ pageW: 30, pageH: 50, cardW: 30, cardH: 50, transform: 'none' });
+    expect(labelPrintLayout({ width: 30, height: 50, printerFeed: 'landscape' })).toMatchObject({ pageW: 50, pageH: 30, cardW: 30, cardH: 50, transform: 'translateY(30mm) rotate(270deg)' });
   });
 
-  it('swaps @page size to portrait for 90/270 so the printer receives the rotated page', () => {
-    expect(labelPrintPageStyle({ width: 50, height: 30, printRotation: 0 })).toContain('@page { size: 50mm 30mm; margin: 0; }');
-    expect(labelPrintPageStyle({ width: 50, height: 30, printRotation: 0 })).toContain('@page label-sheet-page { size: 50mm 30mm; margin: 0; }');
-    expect(labelPrintPageStyle({ width: 50, height: 30, printRotation: 90 })).toContain('@page { size: 30mm 50mm; margin: 0; }');
-    expect(labelPrintPageStyle({ width: 50, height: 30, printRotation: 90 })).toContain('@page label-sheet-page { size: 30mm 50mm; margin: 0; }');
-    expect(labelPrintPageStyle({ width: 50, height: 30, printRotation: 270 })).toContain('@page { size: 30mm 50mm; margin: 0; }');
-    expect(labelPrintPageStyle({ width: 50, height: 30, printRotation: 270 })).toContain('@page label-sheet-page { size: 30mm 50mm; margin: 0; }');
-    expect(labelPrintPageStyle({ width: 50, height: 30, printRotation: 180 })).toContain('@page { size: 50mm 30mm; margin: 0; }');
-    expect(labelPrintPageStyle({ width: 50, height: 30, printRotation: 180 })).toContain('@page label-sheet-page { size: 50mm 30mm; margin: 0; }');
+  it('defaults a 50 by 30 label to a horizontal physical page', () => {
+    expect(defaultLabelConfig.printerFeed).toBe('landscape');
+    expect(labelPrintLayout(defaultLabelConfig)).toMatchObject({
+      pageW: 50,
+      pageH: 30,
+      cardW: 50,
+      cardH: 30,
+      transform: 'none',
+    });
   });
 
-  it('emits a concrete card size for each rotation so print iframes do not depend on CSS variables', () => {
-    expect(labelPrintPageStyle({ width: 50, height: 30, printRotation: 90 })).toContain('.label-card { width: 50mm !important; height: 30mm !important;');
-    expect(labelPrintPageStyle({ width: 50, height: 30, printRotation: 270 })).toContain('.label-card { width: 50mm !important; height: 30mm !important;');
+  it('ignores invalid legacy rotations instead of producing a hidden transform', () => {
+    expect(labelPrintLayout({ width: 50, height: 30, printRotation: 45 as never })).toMatchObject({
+      pageW: 50,
+      pageH: 30,
+      transform: 'none',
+      rotation: 0,
+    });
+  });
+
+  it('migrates missing feed settings from the saved label dimensions', () => {
+    expect(normalizeLabelPrinterFeed({ width: 50, height: 30 })).toBe('landscape');
+    expect(normalizeLabelPrinterFeed({ width: 30, height: 50 })).toBe('portrait');
+    expect(normalizeLabelPrinterFeed({ width: 50, height: 30, printRotation: 90 })).toBe('landscape');
+    expect(normalizeLabelPrinterFeed({ width: 50, height: 30, printerFeed: 'portrait' })).toBe('portrait');
+    expect(normalizeLabelPrinterFeed({ width: 50, height: 30, printerFeed: 'invalid' })).toBe('landscape');
+  });
+
+  it('emits the physical page requested by the printer feed mode', () => {
+    expect(labelPrintPageStyle({ width: 50, height: 30, printerFeed: 'landscape' })).toContain('@page label-sheet-page { size: 50mm 30mm; margin: 0; }');
+    expect(labelPrintPageStyle({ width: 50, height: 30, printerFeed: 'portrait' })).toContain('@page label-sheet-page { size: 30mm 50mm; margin: 0; }');
+  });
+
+  it('emits the unscaled design card size for every feed direction', () => {
+    expect(labelPrintPageStyle({ width: 50, height: 30, printerFeed: 'landscape' })).toContain('.label-card { width: 50mm !important; height: 30mm !important;');
+    expect(labelPrintPageStyle({ width: 50, height: 30, printerFeed: 'portrait' })).toContain('.label-card { width: 50mm !important; height: 30mm !important;');
   });
 
   it('aggregates matching products and recalculates recipe totals', () => {

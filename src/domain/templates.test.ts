@@ -83,8 +83,43 @@ describe('versioned print templates', () => {
     const resized = resizeLabelTemplateForPaper(source, 30, 50);
     expect(resized.paper).toEqual({ widthMm: 30, heightMm: 50 });
     expect(resized.elements.every((element) => element.x >= 0 && element.y >= 0 && element.x + element.width <= 30 && element.y + element.height <= 50)).toBe(true);
-    expect(resized.elements.find((element) => element.kind === 'name')?.width).toBe(30);
+    expect(resized.elements.find((element) => element.kind === 'name')?.width).toBeCloseTo(26.4);
+    expect(resized.elements.find((element) => element.kind === 'name')?.fontSizeMm).toBe(source.elements.find((element) => element.kind === 'name')?.fontSizeMm);
     const restored = resizeLabelTemplateForPaper(resized, 50, 30);
+    expect(restored.elements.find((element) => element.kind === 'name')?.width).toBeCloseTo(source.elements.find((element) => element.kind === 'name')?.width ?? 0);
     expect(restored.elements.find((element) => element.kind === 'name')?.height).toBe(source.elements.find((element) => element.kind === 'name')?.height);
+    expect(restored.elements.find((element) => element.kind === 'name')?.x).toBeCloseTo(source.elements.find((element) => element.kind === 'name')?.x ?? 0);
+    expect(restored.elements.find((element) => element.kind === 'name')?.y).toBeCloseTo(source.elements.find((element) => element.kind === 'name')?.y ?? 0);
+  });
+
+  it('repairs the exact legacy 60 percent shrink signature once', () => {
+    const source = createDefaultTemplate('label');
+    const shrunk = {
+      ...source,
+      version: 1,
+      elements: source.elements.map((element) => ({
+        ...element,
+        width: element.width * 0.6,
+        height: element.height * 0.6,
+        fontSize: source.fontSize * 0.6,
+        fontSizeMm: source.fontSize * 0.6,
+      })),
+    };
+    const migrated = migrateTemplateConfig(shrunk, 'label');
+    expect(migrated.elements.map(({ width, height }) => ({ width, height }))).toEqual(
+      source.elements.map(({ width, height }) => ({ width, height })),
+    );
+    expect(migrated.elements[0].fontSizeMm).toBe(source.fontSize);
+  });
+
+  it('does not overwrite an unrecognized custom legacy layout', () => {
+    const source = createDefaultTemplate('label');
+    const custom = {
+      ...source,
+      version: 1,
+      elements: source.elements.map((element, index) => index === 0 ? { ...element, width: 21, height: 5 } : element),
+    };
+    const migrated = migrateTemplateConfig(custom, 'label');
+    expect(migrated.elements[0]).toMatchObject({ width: 21, height: 5 });
   });
 });

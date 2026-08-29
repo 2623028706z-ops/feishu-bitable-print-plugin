@@ -24,10 +24,13 @@ export type PrintOrder = {
 };
 
 export type LabelRotation = 0 | 90 | 180 | 270;
+export type LabelPrinterFeed = 'landscape' | 'portrait';
 
 export type LabelConfig = {
   width: number;
   height: number;
+  printerFeed: LabelPrinterFeed;
+  /** @deprecated Kept only to migrate older saved settings. */
   printRotation: LabelRotation;
   columns: number;
   rows: number;
@@ -57,11 +60,12 @@ export type LabelConfig = {
  * The editor still keeps grid fields for backwards-compatible templates, but
  * those fields must never change the physical page size of a label print job.
  */
-export function labelPrintPageMetrics(config: Pick<LabelConfig, 'width' | 'height'>) {
+export function labelPrintPageMetrics(config: Pick<LabelConfig, 'width' | 'height'> & Partial<Pick<LabelConfig, 'printerFeed'>>) {
+  const layout = labelPrintLayout(config);
   return {
-    widthMm: config.width,
-    heightMm: config.height,
-    orientation: config.width >= config.height ? 'landscape' : 'portrait',
+    widthMm: layout.pageW,
+    heightMm: layout.pageH,
+    orientation: layout.pageW >= layout.pageH ? 'landscape' : 'portrait',
     columns: 1,
     rows: 1,
     gapXmm: 0,
@@ -71,10 +75,10 @@ export function labelPrintPageMetrics(config: Pick<LabelConfig, 'width' | 'heigh
   } as const;
 }
 
-export function labelPrintPageStyle(config: Pick<LabelConfig, 'width' | 'height'> & Partial<Pick<LabelConfig, 'printRotation'>>): string {
+export function labelPrintPageStyle(config: Pick<LabelConfig, 'width' | 'height'> & Partial<Pick<LabelConfig, 'printerFeed' | 'printRotation'>>): string {
   // @page uses the rotated physical page. The print root is reset to auto size
   // while the cloned preview canvas and sheets are locked to physical millimetres.
-  const layout = labelPrintLayout({ width: config.width, height: config.height, printRotation: config.printRotation ?? 0 });
+  const layout = labelPrintLayout(config);
   const width = `${layout.pageW}mm`;
   const height = `${layout.pageH}mm`;
   const cardWidth = `${layout.cardW}mm`;
@@ -94,26 +98,39 @@ export function labelPrintPageStyle(config: Pick<LabelConfig, 'width' | 'height'
   ].join(' ');
 }
 
+export function normalizeLabelPrinterFeed(config: Pick<LabelConfig, 'width' | 'height'> & {
+  printerFeed?: unknown;
+  printRotation?: unknown;
+}): LabelPrinterFeed {
+  if (config.printerFeed === 'landscape' || config.printerFeed === 'portrait') return config.printerFeed;
+  // The old 90/270 setting produced mismatched paper sizes. Do not carry that
+  // broken behavior into the new explicit output-direction setting.
+  return config.width >= config.height ? 'landscape' : 'portrait';
+}
+
 /**
- * 标签内容始终按 width×height 设计并铺满该 card；printRotation 把整张 card 旋转，
- * 用来抵消标签机把页面整体转 90°/180° 造成的错位。
- * 关键：90°/270° 时「页面(@page/sheet)尺寸」交换成 height×width（竖版），card 保持
- * 原始 width×height 整体旋转后正好填满交换后的页面——内容不挤压、不溢出、铺满。
+ * 标签内容始终按 width×height 设计并铺满该 card。只有明确选择了不同的
+ * 标签机进纸方向时，才交换物理页面宽高并旋转整张 card；旋转本身不参与缩放。
+ * printRotation 仅为旧配置保留，新的 UI 不再写入 90/270。
  */
-export function labelPrintLayout(config: Pick<LabelConfig, 'width' | 'height'> & Partial<Pick<LabelConfig, 'printRotation'>>) {
+export function labelPrintLayout(config: Pick<LabelConfig, 'width' | 'height'> & Partial<Pick<LabelConfig, 'printerFeed' | 'printRotation'>>) {
   const w = config.width;
   const h = config.height;
-  const rotation = ((config.printRotation ?? 0) % 360) as LabelRotation;
-  // card 恒为设计尺寸 w×h，模板元素在其中正常铺满
-  if (rotation === 90 || rotation === 270) {
-    const transform = rotation === 90
+  const designFeed: LabelPrinterFeed = w >= h ? 'landscape' : 'portrait';
+  const legacyRotation = ([0, 90, 180, 270] as number[]).includes(Number(config.printRotation))
+    ? Number(config.printRotation) as LabelRotation
+    : 0;
+  const feed = normalizeLabelPrinterFeed(config);
+  // A feed direction mismatch rotates the complete design card, but never scales it.
+  if (feed !== designFeed) {
+    const transform = feed === 'portrait'
       ? `translateX(${h}mm) rotate(90deg)`
       : `translateY(${w}mm) rotate(270deg)`;
-    // 页面交换成竖版 h×w
-    return { pageW: h, pageH: w, cardW: w, cardH: h, transform, rotation };
+    return { pageW: h, pageH: w, cardW: w, cardH: h, transform, rotation: feed === 'portrait' ? 90 as const : 270 as const, printerFeed: feed };
   }
-  const transform = rotation === 180 ? `translate(${w}mm, ${h}mm) rotate(180deg)` : 'none';
-  return { pageW: w, pageH: h, cardW: w, cardH: h, transform, rotation };
+  const contentRotation = legacyRotation === 180 ? 180 : 0;
+  const transform = contentRotation === 180 ? `translate(${w}mm, ${h}mm) rotate(180deg)` : 'none';
+  return { pageW: w, pageH: h, cardW: w, cardH: h, transform, rotation: contentRotation, printerFeed: feed };
 }
 
 export type DateFilterMode = 'all' | 'exact' | 'range' | 'offset';
@@ -149,6 +166,9 @@ export const defaultPrintFilter: PrintFilter = {
 export const defaultLabelConfig: LabelConfig = {
   width: 50,
   height: 30,
+  // A 50×30 label is normally fed horizontally. Missing legacy settings are
+  // normalized from this design orientation in App.readLabelConfigMemory.
+  printerFeed: 'landscape',
   printRotation: 0,
   columns: 1,
   rows: 1,
