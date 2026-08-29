@@ -83,6 +83,8 @@ describe('versioned print templates', () => {
     const resized = resizeLabelTemplateForPaper(source, 30, 50);
     expect(resized.paper).toEqual({ widthMm: 30, heightMm: 50 });
     expect(resized.elements.every((element) => element.x >= 0 && element.y >= 0 && element.x + element.width <= 30 && element.y + element.height <= 50)).toBe(true);
-    expect(resized.elements.find((element) => element.kind === 'name')?.width).toBeLessThan(source.elements.find((element) => element.kind === 'name')?.width ?? 0);
+    expect(resized.elements.find((element) => element.kind === 'name')?.width).toBe(30);
+    const restored = resizeLabelTemplateForPaper(resized, 50, 30);
+    expect(restored.elements.find((element) => element.kind === 'name')?.height).toBe(source.elements.find((element) => element.kind === 'name')?.height);
   });
 });

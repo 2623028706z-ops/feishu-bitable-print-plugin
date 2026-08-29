@@ -140,7 +140,11 @@ export function resizeLabelTemplateForPaper(template: LabelTemplate, widthMm: nu
   const oldHeight = Math.max(1, template.paper.heightMm);
   const width = Math.max(5, widthMm);
   const height = Math.max(5, heightMm);
-  const scale = Math.min(width / oldWidth, height / oldHeight);
+  const swappedOrientation = Math.abs(width - oldHeight) < 0.01 && Math.abs(height - oldWidth) < 0.01;
+  // Orientation changes should not progressively shrink a saved template.
+  // Keep typography and field rectangles stable; clamp only what falls out
+  // of the new paper bounds.
+  const scale = swappedOrientation ? 1 : Math.min(width / oldWidth, height / oldHeight);
   const offsetX = (width - oldWidth * scale) / 2;
   const offsetY = (height - oldHeight * scale) / 2;
   const next = {
