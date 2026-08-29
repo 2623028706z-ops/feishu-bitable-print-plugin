@@ -33,6 +33,7 @@ describe('print model', () => {
     expect(labelPrintPageMetrics({ width: 40, height: 70 }).orientation).toBe('portrait');
     const pageStyle = labelPrintPageStyle({ width: 70, height: 40 });
     expect(pageStyle).toContain('@page { size: 70mm 40mm; margin: 0; }');
+    expect(pageStyle).toContain('@page label-sheet-page { size: 70mm 40mm; margin: 0; }');
     expect(pageStyle).toContain('width: 70mm !important; height: 40mm !important;');
     expect(pageStyle).toContain('min-width: 0 !important; min-height: 0 !important;');
     expect(pageStyle).toContain('.label-sheet { width: 70mm !important; min-width: 70mm !important; max-width: 70mm !important; height: 40mm !important; min-height: 40mm !important; max-height: 40mm !important; box-sizing: border-box !important; }');
@@ -50,9 +51,13 @@ describe('print model', () => {
 
   it('swaps @page size to portrait for 90/270 so the printer receives the rotated page', () => {
     expect(labelPrintPageStyle({ width: 50, height: 30, printRotation: 0 })).toContain('@page { size: 50mm 30mm; margin: 0; }');
+    expect(labelPrintPageStyle({ width: 50, height: 30, printRotation: 0 })).toContain('@page label-sheet-page { size: 50mm 30mm; margin: 0; }');
     expect(labelPrintPageStyle({ width: 50, height: 30, printRotation: 90 })).toContain('@page { size: 30mm 50mm; margin: 0; }');
+    expect(labelPrintPageStyle({ width: 50, height: 30, printRotation: 90 })).toContain('@page label-sheet-page { size: 30mm 50mm; margin: 0; }');
     expect(labelPrintPageStyle({ width: 50, height: 30, printRotation: 270 })).toContain('@page { size: 30mm 50mm; margin: 0; }');
+    expect(labelPrintPageStyle({ width: 50, height: 30, printRotation: 270 })).toContain('@page label-sheet-page { size: 30mm 50mm; margin: 0; }');
     expect(labelPrintPageStyle({ width: 50, height: 30, printRotation: 180 })).toContain('@page { size: 50mm 30mm; margin: 0; }');
+    expect(labelPrintPageStyle({ width: 50, height: 30, printRotation: 180 })).toContain('@page label-sheet-page { size: 50mm 30mm; margin: 0; }');
   });
 
   it('emits a concrete card size for each rotation so print iframes do not depend on CSS variables', () => {

@@ -81,7 +81,11 @@ export function labelPrintPageStyle(config: Pick<LabelConfig, 'width' | 'height'
   const cardHeight = `${layout.cardH}mm`;
   const size = `${width} ${height}`;
   return [
+    // The sheet uses a named page context. Define both named and unnamed rules:
+    // Chromium applies the named rule when `.label-sheet { page: label-sheet-page }`
+    // is present, while the unnamed rule keeps direct/legacy print paths working.
     `@page { size: ${size}; margin: 0; }`,
+    `@page label-sheet-page { size: ${size}; margin: 0; }`,
     `html, body { width: ${width} !important; height: ${height} !important; min-width: 0 !important; min-height: 0 !important; margin: 0 !important; padding: 0 !important; overflow: visible !important; }`,
     `.label-sheet { width: ${width} !important; min-width: ${width} !important; max-width: ${width} !important; height: ${height} !important; min-height: ${height} !important; max-height: ${height} !important; box-sizing: border-box !important; }`,
     `.label-card { width: ${cardWidth} !important; height: ${cardHeight} !important; box-sizing: border-box !important; }`,
