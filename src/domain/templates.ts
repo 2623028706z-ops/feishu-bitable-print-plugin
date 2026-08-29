@@ -1,4 +1,7 @@
-export const CURRENT_TEMPLATE_VERSION = 2;
+/** Revision number used by the shared-template repository for optimistic locking. */
+export const CURRENT_TEMPLATE_VERSION = 1;
+/** Shape version for local/template JSON migrations. */
+export const CURRENT_TEMPLATE_SCHEMA_VERSION = 2;
 
 export const A4_REQUIRED_COLUMN_IDS = ['bouquet', 'material', 'bunchQuantity', 'stemsPerBunch', 'totalStems', 'note'] as const;
 export type TemplateType = 'label' | 'a4';
@@ -24,6 +27,7 @@ export type LabelElement = {
 
 export type LabelTemplate = {
   version: number;
+  schemaVersion: number;
   type: 'label';
   id: string;
   name: string;
@@ -67,7 +71,7 @@ export type A4Presentation = {
   headerBackground: string;
 };
 export type A4Template = {
-  version: number; type: 'a4'; id: string; name: string; isDefault: boolean; orientation: 'landscape' | 'portrait';
+  version: number; schemaVersion: number; type: 'a4'; id: string; name: string; isDefault: boolean; orientation: 'landscape' | 'portrait';
   margins: { top: number; right: number; bottom: number; left: number };
   title: string; titleVisible: boolean; headerVisible: boolean; footerVisible: boolean; repeatHeader: boolean;
   fontFamily: string; fontSize: number; fontWeight: number; textAlign: TextAlign; rowHeight: number; padding: number;
@@ -95,7 +99,7 @@ function labelDefaults(): LabelTemplate {
     { id: 'careInstructions', kind: 'careInstructions', x: 3, y: 27, width: 44, height: 2, visible: false },
   ];
   return {
-    version: CURRENT_TEMPLATE_VERSION, type: 'label', id: 'system-label-default', name: '标准标签', isDefault: true,
+    version: CURRENT_TEMPLATE_VERSION, schemaVersion: CURRENT_TEMPLATE_SCHEMA_VERSION, type: 'label', id: 'system-label-default', name: '标准标签', isDefault: true,
     paper: { widthMm: 50, heightMm: 30 }, grid: { columns: 1, rows: 1, gapXmm: 0, gapYmm: 0, marginXmm: 0, marginYmm: 0 }, elements,
     labelDateOffsetDays: 0, fixedCopies: 1, fontFamily: defaultFont, fontSize: 3.2, fontWeight: 600, textAlign: 'center', lineHeight: 1.2, padding: 2.2, contentGap: .5, copiesByQuantity: false,
     showName: true, showCode: true, showDate: true, showCustomer: true, showCareInstructions: false,
@@ -107,7 +111,7 @@ function labelDefaults(): LabelTemplate {
 function a4Defaults(): A4Template {
   const labels: Record<string, string> = { bouquet: '花束', material: '花材', bunchQuantity: '加工扎数', stemsPerBunch: '单束用量', totalStems: '总支数', note: '备注' };
   return {
-    version: CURRENT_TEMPLATE_VERSION, type: 'a4', id: 'system-a4-default', name: '标准加工单', isDefault: true, orientation: 'landscape',
+    version: CURRENT_TEMPLATE_VERSION, schemaVersion: CURRENT_TEMPLATE_SCHEMA_VERSION, type: 'a4', id: 'system-a4-default', name: '标准加工单', isDefault: true, orientation: 'landscape',
     margins: { top: 10, right: 12, bottom: 8, left: 12 }, title: '花束加工单', titleVisible: true, headerVisible: true, footerVisible: true, repeatHeader: true,
     fontFamily: defaultFont, fontSize: 2.8, fontWeight: 400, textAlign: 'left', rowHeight: 10, padding: 2, borderVisible: true, borderWidth: .25, borderStyle: 'solid', borderColor: '#9da9a4',
     presentation: { kicker: '花众生产打印', showCustomer: true, showShipDate: true, showOrderCount: true, footerText: '加工扎数取销售数量（扎），同花束按订单合并。', showPageNumber: true, titleSizeMm: 7, metaSizeMm: 2.5, lineHeight: 1.35, cellPaddingMm: 2, headerBackground: '#e8f3f7' },
@@ -173,7 +177,8 @@ function numberValue(value: unknown, fallback: number, min = 0): number {
 }
 
 function repairLegacyShrunkDefault(source: Record<string, any>, base: LabelTemplate, width: number, height: number): Record<string, any> {
-  if (numberValue(source.version, 0) >= CURRENT_TEMPLATE_VERSION || !Array.isArray(source.elements)) return source;
+  if (numberValue(source.schemaVersion, 0) >= CURRENT_TEMPLATE_SCHEMA_VERSION || !Array.isArray(source.elements)) return source;
+  if (source.id && source.id !== base.id && source.isDefault !== true) return source;
   const pairs = base.elements.map((defaultElement) => {
     const saved = source.elements.find((element: any) => element?.id === defaultElement.id || element?.kind === defaultElement.kind);
     return saved ? { saved, defaultElement } : null;
@@ -217,7 +222,7 @@ export function migrateTemplateConfig(raw: unknown, type: TemplateType): PrintTe
   const base = (type === 'label' ? labelDefaults() : a4Defaults()) as any;
   if (type === 'a4') {
     const presentation = { ...base.presentation, ...(source.presentation || {}) };
-    const result = { ...base, ...source, version: CURRENT_TEMPLATE_VERSION, type: 'a4', margins: { ...base.margins, ...(source.margins || {}) }, presentation, columns: Array.isArray(source.columns) ? source.columns : base.columns };
+    const result = { ...base, ...source, version: numberValue(source.version, base.version, 0), schemaVersion: CURRENT_TEMPLATE_SCHEMA_VERSION, type: 'a4', margins: { ...base.margins, ...(source.margins || {}) }, presentation, columns: Array.isArray(source.columns) ? source.columns : base.columns };
     result.columns = result.columns.map((column: any) => ({ ...column, width: numberValue(column.width, 10, 1), visible: column.visible !== false, align: ['left', 'center', 'right'].includes(column.align) ? column.align : 'left' }));
     if (!validateA4Columns(result.columns).valid) result.columns = base.columns;
     return result;
@@ -226,7 +231,7 @@ export function migrateTemplateConfig(raw: unknown, type: TemplateType): PrintTe
   const height = Math.min(300, Math.max(5, numberValue(source.paper?.heightMm ?? source.height, base.height, 5)));
   source = repairLegacyShrunkDefault(source, base, width, height);
   const styles = { ...base.styles, ...(source.styles || {}) };
-  const result: LabelTemplate = { ...base, ...source, version: CURRENT_TEMPLATE_VERSION, type: 'label', paper: { widthMm: width, heightMm: height }, grid: { ...base.grid, ...(source.grid || {}) }, elements: Array.isArray(source.elements) ? source.elements : base.elements, width, height, styles };
+  const result: LabelTemplate = { ...base, ...source, version: numberValue(source.version, base.version, 0), schemaVersion: CURRENT_TEMPLATE_SCHEMA_VERSION, type: 'label', paper: { widthMm: width, heightMm: height }, grid: { ...base.grid, ...(source.grid || {}) }, elements: Array.isArray(source.elements) ? source.elements : base.elements, width, height, styles };
   result.columns = Math.min(20, Math.max(1, Math.round(numberValue(source.columns ?? result.grid.columns, base.columns, 1))));
   result.rows = Math.min(20, Math.max(1, Math.round(numberValue(source.rows ?? result.grid.rows, base.rows, 1))));
   result.gapX = Math.min(50, numberValue(source.gapX ?? result.grid.gapXmm, base.gapX)); result.gapY = Math.min(50, numberValue(source.gapY ?? result.grid.gapYmm, base.gapY));

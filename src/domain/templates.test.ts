@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   CURRENT_TEMPLATE_VERSION,
+  CURRENT_TEMPLATE_SCHEMA_VERSION,
   A4_REQUIRED_COLUMN_IDS,
   createDefaultTemplate,
   migrateTemplateConfig,
@@ -17,6 +18,8 @@ describe('versioned print templates', () => {
     expect(a4.type).toBe('a4');
     expect(label.version).toBe(CURRENT_TEMPLATE_VERSION);
     expect(a4.version).toBe(CURRENT_TEMPLATE_VERSION);
+    expect(label.schemaVersion).toBe(CURRENT_TEMPLATE_SCHEMA_VERSION);
+    expect(a4.schemaVersion).toBe(CURRENT_TEMPLATE_SCHEMA_VERSION);
     expect(label).not.toHaveProperty('columns', A4_REQUIRED_COLUMN_IDS);
     expect(a4.columns.map((column) => column.id)).toEqual(A4_REQUIRED_COLUMN_IDS);
   });
@@ -54,6 +57,7 @@ describe('versioned print templates', () => {
       elements: [{ id: 'name', kind: 'name', x: 49, y: 29, width: 99, height: -3 }],
     }, 'label');
     expect(migrated.version).toBe(CURRENT_TEMPLATE_VERSION);
+    expect(migrated.schemaVersion).toBe(CURRENT_TEMPLATE_SCHEMA_VERSION);
     expect(migrated.type).toBe('label');
     expect(migrated.labelDateOffsetDays).toBe(2);
     expect(migrated.fixedCopies).toBe(5000);
@@ -97,6 +101,7 @@ describe('versioned print templates', () => {
     const shrunk = {
       ...source,
       version: 1,
+      schemaVersion: 1,
       elements: source.elements.map((element) => ({
         ...element,
         width: element.width * 0.6,
@@ -117,9 +122,29 @@ describe('versioned print templates', () => {
     const custom = {
       ...source,
       version: 1,
+      schemaVersion: 1,
       elements: source.elements.map((element, index) => index === 0 ? { ...element, width: 21, height: 5 } : element),
     };
     const migrated = migrateTemplateConfig(custom, 'label');
     expect(migrated.elements[0]).toMatchObject({ width: 21, height: 5 });
+  });
+
+  it('does not repair a non-default shared template even when it has the old ratio', () => {
+    const source = createDefaultTemplate('label');
+    const custom = {
+      ...source,
+      id: 'custom-label',
+      isDefault: false,
+      schemaVersion: 1,
+      elements: source.elements.map((element) => ({ ...element, width: element.width * 0.6, height: element.height * 0.6 })),
+    };
+    const migrated = migrateTemplateConfig(custom, 'label');
+    expect(migrated.elements[0].width).toBeCloseTo(source.elements[0].width * 0.6);
+  });
+
+  it('keeps the revision number separate from the schema version', () => {
+    const migrated = migrateTemplateConfig({ ...createDefaultTemplate('label'), version: 7, schemaVersion: 1 }, 'label');
+    expect(migrated.version).toBe(7);
+    expect(migrated.schemaVersion).toBe(CURRENT_TEMPLATE_SCHEMA_VERSION);
   });
 });
