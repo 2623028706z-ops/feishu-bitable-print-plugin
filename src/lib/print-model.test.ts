@@ -34,7 +34,9 @@ describe('print model', () => {
     const pageStyle = labelPrintPageStyle({ width: 70, height: 40 });
     expect(pageStyle).toContain('@page { size: 70mm 40mm; margin: 0; }');
     expect(pageStyle).toContain('@page label-sheet-page { size: 70mm 40mm; margin: 0; }');
-    expect(pageStyle).toContain('width: 70mm !important; height: 40mm !important;');
+    expect(pageStyle).toContain('@media print { @page { size: 70mm 40mm; margin: 0; } @page label-sheet-page { size: 70mm 40mm; margin: 0; } }');
+    expect(pageStyle).toContain('width: auto !important; height: auto !important;');
+    expect(pageStyle).toContain('.preview-canvas { display: block !important; width: 70mm !important; min-width: 70mm !important; max-width: 70mm !important;');
     expect(pageStyle).toContain('min-width: 0 !important; min-height: 0 !important;');
     expect(pageStyle).toContain('.label-sheet { width: 70mm !important; min-width: 70mm !important; max-width: 70mm !important; height: 40mm !important; min-height: 40mm !important; max-height: 40mm !important; box-sizing: border-box !important; }');
   });

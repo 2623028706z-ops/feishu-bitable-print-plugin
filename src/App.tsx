@@ -222,23 +222,6 @@ export default function App() {
     return typeof unsubscribe === 'function' ? unsubscribe : undefined;
   }, [refresh]);
 
-  useEffect(() => {
-    const styleId = 'label-sheet-page-style';
-    const rule = labelPrintPageStyle(config);
-    if (mode !== 'label') {
-      document.getElementById(styleId)?.remove();
-      return;
-    }
-    const existing = document.getElementById(styleId) as HTMLStyleElement | null;
-    const style = existing ?? document.createElement('style');
-    style.id = styleId;
-    style.textContent = rule;
-    if (!existing) document.head.appendChild(style);
-    return () => {
-      if (style.isConnected) style.remove();
-    };
-  }, [mode, config.width, config.height, config.printRotation]);
-
   const customers = useMemo(() => [...new Set(orders.map((order) => order.customer).filter(Boolean))].sort(), [orders]);
   const categories = useMemo(() => [...new Set(orders.flatMap((order) => splitCategoryValues(order.category)))].sort(), [orders]);
   const products = useMemo(() => [...new Set(orders.map((order) => order.productName).filter(Boolean))].sort(), [orders]);

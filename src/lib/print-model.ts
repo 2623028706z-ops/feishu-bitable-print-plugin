@@ -72,8 +72,8 @@ export function labelPrintPageMetrics(config: Pick<LabelConfig, 'width' | 'heigh
 }
 
 export function labelPrintPageStyle(config: Pick<LabelConfig, 'width' | 'height'> & Partial<Pick<LabelConfig, 'printRotation'>>): string {
-  // @page uses the rotated physical page. The root and sheet are also locked
-  // to millimetres so the app viewport's desktop min-width cannot shrink it.
+  // @page uses the rotated physical page. The print root is reset to auto size
+  // while the cloned preview canvas and sheets are locked to physical millimetres.
   const layout = labelPrintLayout({ width: config.width, height: config.height, printRotation: config.printRotation ?? 0 });
   const width = `${layout.pageW}mm`;
   const height = `${layout.pageH}mm`;
@@ -86,7 +86,9 @@ export function labelPrintPageStyle(config: Pick<LabelConfig, 'width' | 'height'
     // is present, while the unnamed rule keeps direct/legacy print paths working.
     `@page { size: ${size}; margin: 0; }`,
     `@page label-sheet-page { size: ${size}; margin: 0; }`,
-    `html, body { width: ${width} !important; height: ${height} !important; min-width: 0 !important; min-height: 0 !important; margin: 0 !important; padding: 0 !important; overflow: visible !important; }`,
+    `@media print { @page { size: ${size}; margin: 0; } @page label-sheet-page { size: ${size}; margin: 0; } }`,
+    `html, body { width: auto !important; height: auto !important; min-width: 0 !important; min-height: 0 !important; margin: 0 !important; padding: 0 !important; overflow: visible !important; }`,
+    `.preview-canvas { display: block !important; width: ${width} !important; min-width: ${width} !important; max-width: ${width} !important; margin: 0 !important; padding: 0 !important; overflow: visible !important; }`,
     `.label-sheet { width: ${width} !important; min-width: ${width} !important; max-width: ${width} !important; height: ${height} !important; min-height: ${height} !important; max-height: ${height} !important; box-sizing: border-box !important; }`,
     `.label-card { width: ${cardWidth} !important; height: ${cardHeight} !important; box-sizing: border-box !important; }`,
   ].join(' ');
