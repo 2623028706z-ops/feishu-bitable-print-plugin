@@ -193,6 +193,48 @@ describe('feishu link value parsing', () => {
     expect(result.orders[0].category).toBe('鲜花花束、礼盒');
   });
 
+  it('loads a single-select category from 成品档案表 when the sales order has no category', async () => {
+    const salesTable = {
+      id: 'tbl_sales_archive_category',
+      getName: vi.fn().mockResolvedValue('花众销售订单汇总表'),
+      getFieldMetaList: vi.fn().mockResolvedValue([
+        { id: 'fld_code', name: '花束编码' },
+        { id: 'fld_product', name: '花束名称' },
+        { id: 'fld_quantity', name: '销售数量' },
+      ]),
+      getViewById: vi.fn().mockResolvedValue({
+        getSelectedRecordIdList: vi.fn().mockResolvedValue([]),
+        getName: vi.fn().mockResolvedValue('今日出货'),
+      }),
+      getRecordsByPage: vi.fn().mockResolvedValue({ records: [
+        { recordId: 'rec_archive_sales_1', fields: { fld_code: 'HZ-ARCH-001', fld_product: '晨雾玫瑰', fld_quantity: 2 } },
+      ] }),
+    };
+    const archiveTable = {
+      id: 'tbl_product_archive',
+      getFieldMetaList: vi.fn().mockResolvedValue([
+        { id: 'a_code', name: '花束编码' },
+        { id: 'a_name', name: '花束名称' },
+        { id: 'a_category', name: '品类', type: 3 },
+      ]),
+      getRecordsByPage: vi.fn().mockResolvedValue({ records: [
+        { recordId: 'rec_archive_product_1', fields: { a_code: 'HZ-ARCH-001', a_name: '晨雾玫瑰', a_category: { value: { id: 'opt_1', name: '鲜花花束' } } } },
+      ] }),
+    };
+
+    vi.mocked(base.getActiveTable).mockResolvedValue(salesTable as never);
+    vi.mocked(base.getSelection).mockResolvedValue({ tableId: 'tbl_other', viewId: 'view_today', recordId: null, fieldId: null, baseId: 'base' });
+    vi.mocked(base.getTableByName).mockImplementation(async (name) => {
+      if (name === '成品档案表') return archiveTable as never;
+      throw new Error('table not found');
+    });
+
+    const result = await loadFeishuOrders();
+
+    expect(result.orders[0].category).toBe('鲜花花束');
+    expect(archiveTable.getRecordsByPage).toHaveBeenCalledTimes(1);
+  });
+
   it('reads the product code when the sales column was renamed to 成品编码', async () => {
     const salesTable = {
       id: 'tbl_sales_renamed_code',

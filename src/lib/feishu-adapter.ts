@@ -29,6 +29,7 @@ const FIELD_ALIASES = {
 } as const;
 
 const PRODUCT_TABLE_NAMES = ['成品汇总表', '成品配方表', '成品配方', '成品库', '产品库'] as const;
+const CATEGORY_TABLE_NAMES = ['成品档案表', '成品汇总表', '成品配方表', '成品配方', '成品库', '产品库'] as const;
 const PRODUCT_CODE_ALIASES = ['花束编码', '花束编码数值', '编码数值', '成品编码', '商品编码', '产品编码'] as const;
 
 export function text(value: unknown, depth = 0): string {
@@ -101,6 +102,32 @@ function normalizeCategory(value: unknown): string {
     .map((item) => item.normalize('NFKC').replace(/\s+/g, ' ').trim())
     .filter(Boolean)
     .join('、');
+}
+
+/**
+ * Select/lookup fields can expose an option id in `value` while the readable
+ * label is carried by `displayValue`, `text`, `name`, or `label`. Keep ids and
+ * record ids out of the category shown in the print UI.
+ */
+function categoryText(value: unknown, depth = 0): string {
+  if (depth > 6 || value === null || value === undefined) return '';
+  if (typeof value === 'string' || typeof value === 'number') return String(value).trim();
+  if (Array.isArray(value)) return value.map((item) => categoryText(item, depth + 1)).filter(Boolean).join('、');
+  if (typeof value !== 'object') return '';
+  const item = value as Record<string, unknown>;
+  for (const key of ['displayValue', 'display_value', 'text', 'name', 'label', 'title', 'option']) {
+    const candidate = categoryText(item[key], depth + 1);
+    if (candidate) return candidate;
+  }
+  // `value` can itself be a readable option wrapper or a direct label. Never
+  // fall back to id/recordId fields, which are not user-facing category text.
+  if (typeof item.value === 'string' || typeof item.value === 'number') return String(item.value).trim();
+  if (item.value && typeof item.value === 'object') return categoryText(item.value, depth + 1);
+  return '';
+}
+
+function normalizeCategoryValue(value: unknown): string {
+  return normalizeCategory(categoryText(value));
 }
 
 function normalizeDate(value: unknown): string {
@@ -330,6 +357,147 @@ type ProductTableLike = {
   getRecordsByIds: (recordIds: string[], refreshLinkValue?: boolean) => Promise<RawRecord[]>;
 };
 
+type CategoryTableLike = {
+  getFieldMetaList: () => Promise<RawFieldMeta[]>;
+  getRecordsByPage: (options: Record<string, unknown>) => Promise<PageResult>;
+  getRecordsByIds?: (recordIds: string[], refreshLinkValue?: boolean) => Promise<RawRecord[]>;
+};
+
+type CategoryIndex = {
+  table: CategoryTableLike;
+  categoryField?: string;
+  codeField?: string;
+  nameField?: string;
+  recordsById: Map<string, RawRecord>;
+  records: RawRecord[];
+};
+
+async function findTableByNames(names: readonly string[]): Promise<CategoryTableLike | undefined> {
+  const base = bitable.base as unknown as {
+    getTableByName?: (name: string) => Promise<CategoryTableLike>;
+    getTableMetaList?: () => Promise<Array<{ id: string; name: string }>>;
+    getTableById?: (id: string) => Promise<CategoryTableLike>;
+  };
+  for (const name of names) {
+    try {
+      const table = await base.getTableByName?.(name);
+      if (table) return table;
+    } catch {
+      // A base may not contain every conventional table name.
+    }
+  }
+  try {
+    const metas = await base.getTableMetaList?.();
+    const target = metas?.find((meta) => names.includes(meta.name));
+    return target && base.getTableById ? await base.getTableById(target.id) : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+let categoryTablePromise: Promise<CategoryIndex | undefined> | undefined;
+
+async function loadCategoryIndexUncached(): Promise<CategoryIndex | undefined> {
+  try {
+    const table = await findTableByNames(CATEGORY_TABLE_NAMES);
+    if (!table) return undefined;
+    const metas = await table.getFieldMetaList();
+    const labels = Object.fromEntries(metas.map((meta) => [meta.name, meta.id]));
+    const categoryField = fieldId(labels, FIELD_ALIASES.category);
+    if (!categoryField) return undefined;
+    const codeField = fieldId(labels, PRODUCT_CODE_ALIASES);
+    const nameField = fieldId(labels, FIELD_ALIASES.productName);
+    const records = await allRecordsByPage(table, { pageSize: 200, stringValue: false });
+    return {
+      table,
+      categoryField,
+      codeField,
+      nameField,
+      records,
+      recordsById: new Map(
+        records
+          .filter((record): record is RawRecord & { recordId: string } => Boolean(record.recordId))
+          .map((record) => [record.recordId, record] as const),
+      ),
+    };
+  } catch {
+    return undefined;
+  }
+}
+
+function loadCategoryIndex(): Promise<CategoryIndex | undefined> {
+  if (!categoryTablePromise) {
+    categoryTablePromise = loadCategoryIndexUncached().catch((error) => {
+      categoryTablePromise = undefined;
+      throw error;
+    });
+  }
+  return categoryTablePromise;
+}
+
+async function categoryFromLinkedProducts(
+  fields: Record<string, unknown>,
+  labels: Record<string, string>,
+  targets: Record<string, string>,
+): Promise<string> {
+  const productField = fieldId(labels, FIELD_ALIASES.productName);
+  if (!productField) return '';
+  const links = extractLinkedRecordGroups(fields[productField], targets[productField]);
+  if (!links.length) return '';
+  for (const link of links) {
+    try {
+      const table = await bitable.base.getTableById(link.tableId) as unknown as CategoryTableLike;
+      if (!table.getRecordsByIds) continue;
+      const records = await recordsByIds(table as CategoryTableLike & { getRecordsByIds: NonNullable<CategoryTableLike['getRecordsByIds']> }, link.recordIds, true);
+      const metas = await table.getFieldMetaList();
+      const productLabels = Object.fromEntries(metas.map((meta) => [meta.name, meta.id]));
+      const categoryField = fieldId(productLabels, FIELD_ALIASES.category);
+      if (!categoryField) continue;
+      const category = records.map((record) => normalizeCategoryValue(record.fields?.[categoryField])).filter(Boolean).join('、');
+      if (category) return category;
+    } catch {
+      // Continue with the archive-table code/name fallback.
+    }
+  }
+  return '';
+}
+
+async function categoryFromProductArchive(
+  productName: string,
+  productCode: string,
+): Promise<string> {
+  if (!productName && !productCode) return '';
+  const index = await loadCategoryIndex();
+  if (!index?.categoryField) return '';
+  const normalizedCode = productCode.trim();
+  const normalizedName = productName.trim();
+  const byCode = normalizedCode ? index.records.find((record) => {
+    const fields = record.fields ?? {};
+    const code = index.codeField ? text(fields[index.codeField]).trim() : '';
+    return code === normalizedCode;
+  }) : undefined;
+  const match = byCode ?? (normalizedName ? index.records.find((record) => {
+    const fields = record.fields ?? {};
+    const name = index.nameField ? text(fields[index.nameField]).trim() : '';
+    return name === normalizedName;
+  }) : undefined);
+  return match ? normalizeCategoryValue(match.fields?.[index.categoryField]) : '';
+}
+
+async function resolveCategory(
+  fields: Record<string, unknown>,
+  labels: Record<string, string>,
+  targets: Record<string, string>,
+): Promise<string> {
+  const direct = normalizeCategoryValue(findField(fields, FIELD_ALIASES.category, labels));
+  if (direct) return direct;
+  const linked = await categoryFromLinkedProducts(fields, labels, targets);
+  if (linked) return linked;
+  const productName = text(findField(fields, FIELD_ALIASES.productName, labels));
+  const productCode = text(findField(fields, FIELD_ALIASES.productCode, labels));
+  return categoryFromProductArchive(productName, productCode);
+}
+
 async function findProductTableUncached(): Promise<ProductTableLike | undefined> {
   const base = bitable.base as unknown as {
     getTableByName?: (name: string) => Promise<ProductTableLike>;
@@ -416,6 +584,7 @@ function clearRecipeCaches(): void {
   recipeLinkCache.clear();
   productRecipeCache.clear();
   productTablePromise = undefined;
+  categoryTablePromise = undefined;
 }
 
 async function linkedRecipe(
@@ -498,7 +667,7 @@ async function normalizeRecord(
     orderNo: text(findField(fields, FIELD_ALIASES.orderNo, labels)),
     shipDate: normalizeDate(findField(fields, FIELD_ALIASES.shipDate, labels)),
     customer: text(findField(fields, FIELD_ALIASES.customer, labels)),
-    category: normalizeCategory(findField(fields, FIELD_ALIASES.category, labels)),
+    category: await resolveCategory(fields, labels, targets),
     careInstructions: text(findField(fields, FIELD_ALIASES.careInstructions, labels)),
     productName: text(findField(fields, FIELD_ALIASES.productName, labels)) || '未命名花束',
     productCode,
@@ -519,22 +688,23 @@ async function fieldLabels(
   };
 }
 
-export async function loadFeishuOrders(): Promise<{ orders: PrintOrder[]; source: string; tableName: string }> {
+export async function loadFeishuOrders(): Promise<{ orders: PrintOrder[]; source: string; tableName: string; columns: string[] }> {
   clearRecipeCaches();
   const table = await bitable.base.getActiveTable();
   const { labels, targets } = await fieldLabels(table);
   const selection = await bitable.base.getSelection();
   const activeName = await table.getName();
+  const columns = Object.keys(labels);
 
   const view = selection.viewId ? await table.getViewById(selection.viewId) : await table.getActiveView();
   const selectedIds = await (view as IGridView).getSelectedRecordIdList().catch(() => [] as string[]);
   if (selection.tableId === table.id && selectedIds.length) {
     const records = await recordsByIds(table, selectedIds, true);
-    return { orders: await Promise.all(records.map((record, index) => normalizeRecord({ ...record, recordId: record.recordId ?? selectedIds[index] }, labels, targets))), source: `已选 ${selectedIds.length} 条记录`, tableName: activeName };
+    return { orders: await Promise.all(records.map((record, index) => normalizeRecord({ ...record, recordId: record.recordId ?? selectedIds[index] }, labels, targets))), source: `已选 ${selectedIds.length} 条记录`, tableName: activeName, columns };
   }
   if (selection.tableId === table.id && selection.recordId) {
     const record = await table.getRecordById(selection.recordId, true);
-    return { orders: [await normalizeRecord({ ...record, recordId: selection.recordId }, labels, targets)], source: '当前选中记录', tableName: activeName };
+    return { orders: [await normalizeRecord({ ...record, recordId: selection.recordId }, labels, targets)], source: '当前选中记录', tableName: activeName, columns };
   }
 
   // Keep structured link values (tableId/recordIds) so product recipes can be expanded.
@@ -543,5 +713,6 @@ export async function loadFeishuOrders(): Promise<{ orders: PrintOrder[]; source
     orders: await Promise.all(records.map((record) => normalizeRecord(record, labels, targets))),
     source: `当前视图 · ${await view.getName()}`,
     tableName: activeName,
+    columns,
   };
 }

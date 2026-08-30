@@ -2,19 +2,19 @@
 @import "../node_modules/@douyinfe/semi-ui/dist/css/semi.min.css";
 
 /* 花众打印工作台 — 单一设计 token，无重复。
-   品牌：清爽高级的鲜花供应链绿，弃冷天蓝、不用 AI 紫。 */
+   品牌：清爽的天蓝色生产工具，打印内容保持高对比黑白。 */
 
-/* Semi 组件换肤：把默认蓝主色重指到花众绿。 */
+/* Semi 组件换肤：统一使用天蓝主色。 */
 :root,
 body[theme-mode='light'] {
-  --semi-color-primary: 46, 125, 91;
-  --semi-color-primary-hover: 34, 99, 73;
-  --semi-color-primary-active: 27, 82, 60;
-  --semi-color-primary-disabled: 176, 202, 190;
-  --semi-color-primary-light-default: 233, 243, 236;
-  --semi-color-primary-light-hover: 220, 236, 226;
-  --semi-color-primary-light-active: 205, 228, 214;
-  --semi-color-focus-border: 46, 125, 91;
+  --semi-color-primary: 47, 134, 181;
+  --semi-color-primary-hover: 39, 112, 153;
+  --semi-color-primary-active: 31, 94, 128;
+  --semi-color-primary-disabled: 174, 207, 224;
+  --semi-color-primary-light-default: 232, 245, 251;
+  --semi-color-primary-light-hover: 216, 238, 248;
+  --semi-color-primary-light-active: 200, 230, 243;
+  --semi-color-focus-border: 47, 134, 181;
 }
 
 /* 花众 app token */
@@ -26,12 +26,12 @@ body[theme-mode='light'] {
   --line: #dde5df;
   --line-soft: #e8eee9;
   --surface: #ffffff;
-  --page: #f3f6f1;
-  --panel: #f8faf6;
-  --brand: #2e7d5b;
-  --brand-dark: #226349;
-  --brand-soft: #e9f3ec;
-  --brand-tint: #f1f7f2;
+  --page: #f3f7fa;
+  --panel: #f8fbfd;
+  --brand: #2f86b5;
+  --brand-dark: #276f96;
+  --brand-soft: #e8f4fa;
+  --brand-tint: #f1f8fc;
   --amber: #8f6417;
   --amber-soft: #fbf1db;
   --rose: #b3514e;
@@ -60,7 +60,7 @@ body { margin: 0; min-width: 320px; min-height: 100dvh; background: var(--page);
 button, input, select { font: inherit; font-size: 13px; }
 button { cursor: pointer; }
 button:focus-visible, input:focus-visible, select:focus-visible {
-  outline: 3px solid rgba(46, 125, 91, .22);
+  outline: 3px solid rgba(47, 134, 181, .22);
   outline-offset: 2px;
 }
 

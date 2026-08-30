@@ -1,5 +1,6 @@
 import type { CSSProperties, ReactNode } from 'react';
 import { aggregateOrders, type PrintOrder } from '../../lib/print-model';
+import { paginateWorkOrderRows, type WorkOrderPageRow } from './work-order-pagination';
 
 export type WorkOrderColumnId = 'bouquet' | 'material' | 'bunchQuantity' | 'stemsPerBunch' | 'totalStems' | 'note';
 export type WorkOrderColumn = {
@@ -217,25 +218,16 @@ function tableValue(column: WorkOrderColumnId, order: PrintOrder, recipeIndex: n
   return line.note || order.note || '';
 }
 
-function WorkOrderRow({ order, index, columns }: { order: PrintOrder; index: number; columns: WorkOrderColumn[] }) {
-  const lines = order.recipe.length ? order.recipe : [null];
-  return <>
-    {lines.map((line, recipeIndex) => (
-      <tr key={`${order.recordId}-${line?.material ?? 'missing'}-${recipeIndex}`}>
-        {columns.map((column) => column.id === 'bouquet' && recipeIndex > 0 ? null : (
-          <td
-            className={column.id === 'bouquet' ? 'wo-bouquet' : undefined}
-            key={column.id}
-            rowSpan={column.id === 'bouquet' && lines.length > 1 ? lines.length : undefined}
-            style={{ textAlign: column.align }}
-          >
-            {column.id === 'bouquet' ? <span className="wo-index">{index + 1}. </span> : null}
-            {tableValue(column.id, order, recipeIndex)}
-          </td>
-        ))}
-      </tr>
+function WorkOrderRow({ row, index, columns }: { row: WorkOrderPageRow; index: number; columns: WorkOrderColumn[] }) {
+  const { order, recipeIndex } = row;
+  return <tr key={row.id}>
+    {columns.map((column) => (
+      <td className={column.id === 'bouquet' ? 'wo-bouquet' : undefined} key={column.id} style={{ textAlign: column.align }}>
+        {column.id === 'bouquet' && (row.bouquetStart || row.continued) ? <span className="wo-index">{row.continued ? '续 · ' : `${index + 1}. `}</span> : null}
+        {column.id === 'bouquet' && !row.bouquetStart && !row.continued ? null : row.continued && column.id === 'bouquet' ? <><strong>{order.productName}</strong><small>{order.productCode}</small></> : tableValue(column.id, order, recipeIndex)}
+      </td>
     ))}
-  </>;
+  </tr>;
 }
 
 export function WorkOrderPrintDocument({ orders, template: rawTemplate, className, shipDateLabel, interactive = false, selectedRegion, onSelectRegion }: WorkOrderPrintDocumentProps) {
@@ -252,7 +244,6 @@ export function WorkOrderPrintDocument({ orders, template: rawTemplate, classNam
     } as const;
   };
   const grouped = aggregateOrders(orders.filter((order) => order.quantity > 0));
-  const totalQuantity = grouped.reduce((sum, order) => sum + order.quantity, 0);
   const visibleColumns = template.columns.filter((column) => column.visible);
   const contentStyle = {
     '--wo-border-color': template.table.borderColor,
@@ -267,44 +258,59 @@ export function WorkOrderPrintDocument({ orders, template: rawTemplate, classNam
     '--wo-customer-size': `${template.typography.customerSizeMm}mm`,
   } as CSSProperties;
   const pageRule = `@page work-order-generated { size: A4 ${template.orientation}; margin: 0; }`;
+  const pageWidth = template.orientation === 'landscape' ? 297 : 210;
+  const pageHeight = template.orientation === 'landscape' ? 210 : 297;
+  const pages = paginateWorkOrderRows([grouped], {
+    pageBodyHeightMm: Math.max(40, pageHeight - template.marginsMm.top - template.marginsMm.bottom - 34),
+    headerHeightMm: 25,
+    tableHeaderHeightMm: 9,
+    rowHeightMm: (row) => {
+      const line = row.order.recipe[row.recipeIndex];
+      const length = Math.max(row.order.productName.length, line?.material?.length ?? 0, line?.note?.length ?? 0, row.order.note.length);
+      return Math.max(10, Math.ceil(length / 24) * 5 + template.table.cellPaddingMm * 2);
+    },
+  });
+  const renderPage = (pageData: ReturnType<typeof paginateWorkOrderRows>[number]) => (
+    <article className="work-order-page" key={pageData.number} data-page-number={pageData.number}>
+      {template.header.visible && <header className="wo-head" {...(pageData.number === 1 ? region('header') : {})}>
+        <div>
+          <h1 className="wo-title" {...(pageData.number === 1 ? region('title') : {})}>{template.title}</h1>
+          <p className="wo-meta" {...(pageData.number === 1 ? region('meta') : {})}>
+            {template.header.showCustomer && <>客户：<b className="wo-customer">{customerLabel(orders)}</b></>}
+            {template.header.showCustomer && template.header.showShipDate && ' · '}
+            {template.header.showShipDate && <>出货日期：<b className="wo-ship-date">{dateLabel(orders, shipDateLabel)}</b></>}
+          </p>
+        </div>
+      </header>}
+      <table aria-label={`${template.title}明细`} {...(pageData.number === 1 ? region('table') : {})}>
+        <colgroup>{visibleColumns.map((column) => <col key={column.id} style={{ width: `${column.width}%` }} />)}</colgroup>
+        <thead><tr>{visibleColumns.map((column) => <th key={column.id} scope="col" style={{ textAlign: column.align }} {...(pageData.number === 1 ? region(`col:${column.id}`) : {})}>{column.label}</th>)}</tr></thead>
+        <tbody>{pageData.rows.map((row, index) => <WorkOrderRow columns={visibleColumns} index={index} key={row.id} row={row} />)}</tbody>
+      </table>
+      <div className="wo-page-number">第 {pageData.number} / {pageData.total} 页</div>
+    </article>
+  );
 
   return (
-    <article
+    <section
       className={`work-order-document${interactive ? ' work-order-document--interactive' : ''} ${className ?? ''}`.trim()}
       data-template-name={template.name}
-      style={{ ...contentStyle, page: 'work-order-generated', padding: `${template.marginsMm.top}mm ${template.marginsMm.right}mm ${template.marginsMm.bottom}mm ${template.marginsMm.left}mm` }}
+      data-page-count={pages.length}
+      style={{ ...contentStyle, page: 'work-order-generated' }}
       {...region('page')}
     >
       <style>{`${pageRule}
-        .work-order-document{background:#fff;box-sizing:border-box;color:#16211b;font-family:var(--wo-font-family);font-size:var(--wo-body-size);font-weight:var(--wo-font-weight);height:${template.orientation === 'landscape' ? '210mm' : '297mm'};line-height:var(--wo-line-height);width:${template.orientation === 'landscape' ? '297mm' : '210mm'}}
-        .work-order-document .wo-head{align-items:flex-end;border-bottom:calc(var(--wo-border-width) * 3) solid #2e7d5b;display:flex;justify-content:space-between;min-height:25mm;padding-bottom:3mm}
+        .work-order-document{background:transparent;box-sizing:border-box;color:#16211b;font-family:var(--wo-font-family);font-size:var(--wo-body-size);font-weight:var(--wo-font-weight);line-height:var(--wo-line-height);width:${pageWidth}mm}
+        .work-order-page{background:#fff;box-sizing:border-box;break-after:page;break-inside:avoid;display:flex;flex-direction:column;height:${pageHeight}mm;margin:0 0 8mm;padding:${template.marginsMm.top}mm ${template.marginsMm.right}mm ${template.marginsMm.bottom}mm ${template.marginsMm.left}mm;position:relative;width:${pageWidth}mm}
+        .work-order-page:last-child{break-after:auto}
+        .work-order-document .wo-head{align-items:flex-end;border-bottom:calc(var(--wo-border-width) * 3) solid #54a9d6;display:flex;justify-content:space-between;min-height:25mm;padding-bottom:3mm}
         .work-order-document .wo-kicker{color:#2e7d5b;font-size:2mm;font-weight:700;letter-spacing:.08em;text-transform:uppercase}
         .work-order-document .wo-title{font-size:${template.typography.titleSizeMm}mm;line-height:1.1;margin:1.2mm 0 1.5mm;text-align:${template.typography.align}}
-        .work-order-document .wo-meta{color:#4c5d53;font-size:${template.typography.metaSizeMm}mm;margin:0}.work-order-document .wo-meta b{color:#226349}.work-order-document .wo-meta .wo-customer{font-size:var(--wo-customer-size);font-weight:700}
-        .work-order-document .wo-stat{color:#226349;text-align:right}.work-order-document .wo-stat strong{display:block;font-family:"Microsoft YaHei","PingFang SC",sans-serif;font-size:6mm;line-height:1;font-variant-numeric:tabular-nums}.work-order-document .wo-stat span{display:block;font-size:${template.typography.metaSizeMm}mm;margin-top:2mm}
-        .work-order-document table{border-collapse:collapse;break-inside:auto;margin-top:5mm;table-layout:fixed;width:100%}.work-order-document thead{display:table-header-group}.work-order-document tr{break-inside:avoid;page-break-inside:avoid}.work-order-document th,.work-order-document td{border:var(--wo-border-width) var(--wo-border-style) var(--wo-border-color);padding:var(--wo-cell-padding);vertical-align:middle}.work-order-document th{background:var(--wo-header-bg);color:#3a5145;font-size:calc(var(--wo-body-size) * .92);font-weight:700;height:9mm}.work-order-document tbody tr:nth-child(even) td{background:#f7faf7}.work-order-document .wo-repeat-customer{display:none}.work-order-document td{height:10mm;font-variant-numeric:tabular-nums}.work-order-document .wo-bouquet{background:#eef6f0}.work-order-document tbody tr:nth-child(even) td.wo-bouquet{background:#eef6f0}.work-order-document .wo-bouquet strong,.work-order-document .wo-bouquet small{display:block}.work-order-document .wo-bouquet strong{font-size:calc(var(--wo-body-size) * 1.05)}.work-order-document .wo-bouquet small{color:#2e7d5b;font-family:"SF Mono","Roboto Mono",monospace;font-size:calc(var(--wo-body-size) * .85);font-weight:600;letter-spacing:.05em;margin-top:1mm}.work-order-document .wo-index{color:#2e7d5b;font-weight:700}.work-order-document .wo-footer{border-top:var(--wo-border-width) solid #cddbd1;color:#5c6d63;font-size:${template.typography.metaSizeMm}mm;margin-top:5mm;padding-top:3mm}.work-order-document .wo-page{float:right}.work-order-document .wo-page-number::after{content:counter(page)}@media print{.work-order-document{box-shadow:none;break-after:page;page-break-after:always}.work-order-document .wo-repeat-customer{display:table-row}.work-order-document .wo-repeat-customer th{background:#fff;border-left:0;border-right:0;color:#226349;font-size:calc(var(--wo-body-size) * .95);height:8mm;text-align:left}.work-order-document thead{display:table-header-group}}
+        .work-order-document .wo-meta{color:#4c5d53;font-size:${template.typography.metaSizeMm}mm;margin:0}.work-order-document .wo-meta b{color:#2f86b5}.work-order-document .wo-meta .wo-customer{font-size:var(--wo-customer-size);font-weight:700}
+        .work-order-document table{border-collapse:collapse;break-inside:auto;margin-top:5mm;table-layout:fixed;width:100%}.work-order-document tr{break-inside:avoid;page-break-inside:avoid}.work-order-document th,.work-order-document td{border:var(--wo-border-width) var(--wo-border-style) var(--wo-border-color);padding:var(--wo-cell-padding);vertical-align:top;overflow-wrap:anywhere;white-space:normal}.work-order-document th{background:var(--wo-header-bg);color:#34576a;font-size:calc(var(--wo-body-size) * .92);font-weight:700;height:9mm}.work-order-document tbody tr:nth-child(even) td{background:#f7fafc}.work-order-document td{min-height:10mm;font-variant-numeric:tabular-nums}.work-order-document .wo-bouquet{background:#eef8fc}.work-order-document tbody tr:nth-child(even) td.wo-bouquet{background:#eef8fc}.work-order-document .wo-bouquet strong,.work-order-document .wo-bouquet small{display:block}.work-order-document .wo-bouquet strong{font-size:calc(var(--wo-body-size) * 1.05)}.work-order-document .wo-bouquet small{color:#2f86b5;font-family:"SF Mono","Roboto Mono",monospace;font-size:calc(var(--wo-body-size) * .85);font-weight:600;letter-spacing:.05em;margin-top:1mm}.work-order-document .wo-index{color:#2f86b5;font-weight:700}.work-order-document .wo-page-number{color:#5c6d63;font-size:${template.typography.metaSizeMm}mm;margin-top:auto;padding-top:3mm;text-align:right}@media print{.work-order-page{margin-bottom:0;box-shadow:none;transform:none!important}.work-order-document [data-region]{outline:none!important}}
         @media screen{.work-order-document--interactive [data-region]{cursor:pointer;outline-offset:-1px;transition:outline-color .12s,background-color .12s}.work-order-document--interactive [data-region]:hover{outline:1.5px dashed #7fb79b}.work-order-document--interactive [data-region][data-selected]{outline:2px solid #2e7d5b;outline-offset:-1px}.work-order-document--interactive th[data-region]:hover{background:#e3f0e8}.work-order-document--interactive th[data-region][data-selected]{background:#d6ebdd}}
       `}</style>
-      {template.header.visible && (
-        <header className="wo-head" style={{ transform: `translate(${template.layout.header.x}mm, ${template.layout.header.y}mm)` }} {...region('header')}>
-          <div>
-            {template.header.kicker && <div className="wo-kicker">{template.header.kicker}</div>}
-            <h1 className="wo-title" {...region('title')}>{template.title}</h1>
-            <p className="wo-meta" {...region('meta')}>
-              {template.header.showCustomer && <>客户：<b className="wo-customer">{customerLabel(orders)}</b></>}
-              {template.header.showCustomer && template.header.showShipDate && ' · '}
-              {template.header.showShipDate && <>出货日期：<b>{dateLabel(orders, shipDateLabel)}</b></>}
-            </p>
-          </div>
-          {template.header.showOrderCount && <div className="wo-stat" {...region('stat')}><strong>{totalQuantity} 扎</strong><span>{grouped.length} 款 · {orders.length} 单</span></div>}
-        </header>
-      )}
-      <table aria-label={`${template.title}明细`} style={{ transform: `translate(${template.layout.table.x}mm, ${template.layout.table.y}mm)` }} {...region('table')}>
-        <colgroup>{visibleColumns.map((column) => <col key={column.id} style={{ width: `${column.width}%` }} />)}</colgroup>
-        <thead><tr className="wo-repeat-customer"><th colSpan={visibleColumns.length}>客户：{customerLabel(orders)} · 出货日期：{dateLabel(orders, shipDateLabel)}</th></tr><tr>{visibleColumns.map((column) => <th key={column.id} scope="col" style={{ textAlign: column.align }} {...region(`col:${column.id}`)}>{column.label}</th>)}</tr></thead>
-        <tbody>{grouped.map((order, index) => <WorkOrderRow columns={visibleColumns} index={index} key={order.recordId} order={order} />)}</tbody>
-      </table>
-      {template.footer.visible && <footer className="wo-footer" style={{ transform: `translate(${template.layout.footer.x}mm, ${template.layout.footer.y}mm)` }} {...region('footer')}>{template.footer.text}{template.footer.showPageNumber && <span className="wo-page">第 <span className="wo-page-number" /> 页</span>}</footer>}
-    </article>
+      {pages.map(renderPage)}
+    </section>
   );
 }
